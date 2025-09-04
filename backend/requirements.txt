@@ -5,6 +5,9 @@ jira==3.5.0
 PyGithub==2.1.1
 chromadb==0.4.22
 python-dotenv==1.0.0
-pydantic==1.10.14
-fastapi==0.95.2
+# Upgrade to FastAPI with Pydantic v2 support (works on Python 3.12)
+fastapi==0.115.6
+# Pydantic v2 compatible with FastAPI 0.115.x
+pydantic==2.10.6
+pydantic-settings==2.7.1
 uvicorn==0.25.0
