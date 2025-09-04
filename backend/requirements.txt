@@ -1,0 +1,10 @@
+langchain==0.1.0
+langgraph==0.0.20
+openai==1.6.1
+jira==3.5.0
+PyGithub==2.1.1
+chromadb==0.4.22
+python-dotenv==1.0.0
+pydantic==1.10.14
+fastapi==0.95.2
+uvicorn==0.25.0
