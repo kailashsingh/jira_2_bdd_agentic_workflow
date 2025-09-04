@@ -15,7 +15,7 @@ app = FastAPI(title="Jira to BDD Agent API")
 
 class WorkflowRequest(BaseModel):
     sprint_id: Optional[int] = None
-    jira_keys: Optional[List[str]] = None
+    jira_keys: Opti onal[List[str]] = None
 
 class WorkflowResponse(BaseModel):
     status: str
