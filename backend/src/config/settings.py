@@ -1,4 +1,4 @@
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     
     # LLM settings
     openai_api_key: str
+    huggingface_api_key: str
     model_name: str = "gpt-4"
+    ollama_model_name: str = "gpt-oss:20b"
     
     # RAG settings
     vector_db_path: str = "./chroma_db"

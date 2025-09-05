@@ -2,12 +2,15 @@ import chromadb
 from chromadb.utils import embedding_functions
 from typing import List, Dict
 from src.config.settings import settings
+from src.config.logging import get_logger
+
+logger = get_logger(__name__)
 
 class RAGTools:
     def __init__(self):
         self.client = chromadb.PersistentClient(path=settings.vector_db_path)
-        self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=settings.openai_api_key
+        self.embedding_function = embedding_functions.HuggingFaceEmbeddingFunction(
+            api_key=settings.huggingface_api_key
         )
         self.collection = None
         self._initialize_collection()
@@ -19,7 +22,9 @@ class RAGTools:
                 name="bdd_codebase",
                 embedding_function=self.embedding_function
             )
+            logger.debug(f'Collection \'bdd_codebase\' in ChromaDB already exists. Using the existing collection')
         except:
+            logger.debug(f'Collection \'bdd_codebase\' in ChromaDB doesn\'t exists. Creating a new collection')
             self.collection = self.client.create_collection(
                 name="bdd_codebase",
                 embedding_function=self.embedding_function
@@ -27,6 +32,8 @@ class RAGTools:
     
     def index_codebase(self, features: List[Dict], step_defs: List[Dict]):
         """Index the BDD codebase for RAG"""
+
+        logger.info(f'Indexing the \'bdd_codebase\' for RAG')
         documents = []
         metadatas = []
         ids = []
@@ -61,6 +68,10 @@ class RAGTools:
     
     def search_similar_code(self, query: str, n_results: int = 5) -> List[Dict]:
         """Search for similar code in the indexed codebase"""
+        if(self.collection.count() == 0):
+            logger.warning("The collection is empty. No documents to search.")
+            return []
+        
         results = self.collection.query(
             query_texts=[query],
             n_results=n_results

@@ -2,6 +2,9 @@ from github import Github
 from typing import List, Optional, Dict
 import base64
 from src.config.settings import settings
+from src.config.logging import get_logger
+
+logger = get_logger(__name__)
 
 class GitHubTools:
     def __init__(self):
@@ -10,30 +13,40 @@ class GitHubTools:
     
     def get_feature_files(self) -> List[Dict]:
         """Fetch all feature files from the repository"""
+
+        logger.info(f"Fetching feature files from {settings.github_repo}")
         features = []
-        contents = self.repo.get_contents("features")
+        contents = self.repo.get_contents("src")
         
         for content_file in contents:
             if content_file.path.endswith('.feature'):
-                features.append({
+                feature = {
                     'path': content_file.path,
                     'content': base64.b64decode(content_file.content).decode('utf-8'),
                     'name': content_file.name
-                })
+                }
+                logger.debug(f'Feature file: {feature}')
+                features.append(feature)
+
         return features
     
     def get_step_definitions(self) -> List[Dict]:
         """Fetch all step definition files"""
+
+        logger.info(f"Fetching step definitions from {settings.github_repo}")
         step_defs = []
-        contents = self.repo.get_contents("step-definitions")
+        contents = self.repo.get_contents("src")
         
         for content_file in contents:
             if content_file.path.endswith('.ts'):
-                step_defs.append({
+                step_def = {
                     'path': content_file.path,
                     'content': base64.b64decode(content_file.content).decode('utf-8'),
                     'name': content_file.name
-                })
+                }
+                logger.debug(f'Step definition: {step_def}')
+                step_defs.append(step_def)
+                
         return step_defs
     
     def create_branch(self, branch_name: str) -> str:

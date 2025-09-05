@@ -5,7 +5,10 @@ from src.tools.github_tools import GitHubTools
 from src.tools.rag_tools import RAGTools
 from src.agents.bdd_generator_agent import BDDGeneratorAgent
 from src.config.settings import settings
+from src.config.logging import get_logger
 import json
+
+logger = get_logger(__name__)
 
 class WorkflowOrchestrator:
     def __init__(self):
@@ -67,8 +70,9 @@ class WorkflowOrchestrator:
             return {**state, 'completed': True}
         
         current_ticket = tickets[current_index]
+        logger.info(f'Processing ticket: {current_ticket["key"]}')
         is_testable = self.bdd_agent.is_testable(current_ticket)
-        
+        logger.info(f'Ticket {current_ticket["key"]} is testable: {is_testable}')
         return {
             **state,
             'current_ticket': current_ticket,
