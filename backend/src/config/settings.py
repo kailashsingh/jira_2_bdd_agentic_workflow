@@ -15,7 +15,9 @@ class Settings(BaseSettings):
     
     # LLM settings
     openai_api_key: str
+    huggingface_api_key: str
     model_name: str = "gpt-4"
+    ollama_model_name: str = "gpt-oss:20b"
     
     # RAG settings
     vector_db_path: str = "./chroma_db"

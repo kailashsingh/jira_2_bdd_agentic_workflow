@@ -1,14 +1,19 @@
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
 from langchain.prompts import ChatPromptTemplate
 from typing import Dict, List
 from src.config.settings import settings
+from src.config.logging import get_logger
+
+logger = get_logger(__name__)
 
 class BDDGeneratorAgent:
     def __init__(self, rag_tools):
-        self.llm = ChatOpenAI(
-            model_name=settings.model_name,
+        logger.info(f'Ollama Model Used: {settings.ollama_model_name}')
+        self.llm = ChatOllama(
+            model=settings.ollama_model_name,
             temperature=0.2,
-            openai_api_key=settings.openai_api_key
+            # openai_api_key=settings.openai_api_key
         )
         self.rag_tools = rag_tools
     
@@ -21,6 +26,7 @@ class BDDGeneratorAgent:
         Type: {issue_type}
         Summary: {summary}
         Description: {description}
+        Acceptance Criteria: {acceptance_criteria}
         
         Return TRUE if this is a user story or feature that requires testing.
         Return FALSE if this is a bug fix, documentation, or infrastructure task.

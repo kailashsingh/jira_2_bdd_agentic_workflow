@@ -1,13 +1,14 @@
-langchain==0.1.0
-langgraph==0.0.20
-openai==1.6.1
+langchain==0.3.5
+langchain-core==0.3.13
+langgraph==0.2.20
+langchain-ollama==0.2.0
+langchain-openai==0.2.0
+openai==1.99.9
 jira==3.5.0
 PyGithub==2.1.1
 chromadb==0.4.22
 python-dotenv==1.0.0
-# Upgrade to FastAPI with Pydantic v2 support (works on Python 3.12)
-fastapi==0.115.6
-# Pydantic v2 compatible with FastAPI 0.115.x
-pydantic==2.10.6
-pydantic-settings==2.7.1
+pydantic==2.7.4
+pydantic-settings==2.10.1
+fastapi==0.116.1
 uvicorn==0.25.0
