@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional
 from src.tools.jira_tools import JiraTools
 from src.tools.github_tools import GitHubTools
 from src.tools.rag_tools import RAGTools
+from src.tools.application_tools import ApplicationTools
 from src.agents.bdd_generator_agent import BDDGeneratorAgent
 from src.config.settings import settings
 from src.config.logging import get_logger
@@ -15,6 +16,7 @@ class WorkflowOrchestrator:
         self.jira_tools = JiraTools()
         self.github_tools = GitHubTools()
         self.rag_tools = RAGTools()
+        self.application_tools = ApplicationTools()
         self.bdd_agent = BDDGeneratorAgent(self.rag_tools)
         self.workflow = self._create_workflow()
     
@@ -26,6 +28,7 @@ class WorkflowOrchestrator:
         workflow.add_node("fetch_jira_tickets", self.fetch_jira_tickets)
         workflow.add_node("index_codebase", self.index_codebase)
         workflow.add_node("process_ticket", self.process_ticket)
+        workflow.add_node("navigate_application", self.navigate_application)
         workflow.add_node("generate_tests", self.generate_tests)
         workflow.add_node("create_pr", self.create_pr)
         
@@ -34,13 +37,21 @@ class WorkflowOrchestrator:
         workflow.add_edge("index_codebase", "process_ticket")
         workflow.add_conditional_edges(
             "process_ticket",
+            self.should_navigate_application,
+            {
+                True: "navigate_application",
+                False: "generate_tests"
+            }
+        )
+        workflow.add_edge("navigate_application", "generate_tests")
+        workflow.add_conditional_edges(
+            "generate_tests",
             self.should_generate_tests,
             {
-                True: "generate_tests",
+                True: "create_pr",
                 False: END
             }
         )
-        workflow.add_edge("generate_tests", "create_pr")
         workflow.add_edge("create_pr", "process_ticket")
         
         # Set entry point
@@ -79,20 +90,50 @@ class WorkflowOrchestrator:
             'is_testable': is_testable
         }
     
+    def should_navigate_application(self, state: Dict) -> bool:
+        """Conditional edge to determine if application navigation is needed"""
+        if not state.get('is_testable', False) or state.get('completed', False):
+            return False
+        
+        current_ticket = state.get('current_ticket')
+        if not current_ticket:
+            return False
+        
+        return self.application_tools.needs_navigation(current_ticket)
+    
     def should_generate_tests(self, state: Dict) -> bool:
         """Conditional edge to determine if tests should be generated"""
         return state.get('is_testable', False) and not state.get('completed', False)
     
+    def navigate_application(self, state: Dict) -> Dict:
+        """Navigate to application and collect data"""
+        ticket = state['current_ticket']
+        logger.info(f'Navigating application for ticket: {ticket["key"]}')
+        
+        # Get existing BDD data for context
+        query = f"{ticket['summary']} {ticket['description'][:200]}"
+        existing_bdd_data = self.rag_tools.search_similar_code(query)
+        
+        # Navigate and collect application data
+        application_data = self.application_tools.navigate_and_collect_data(
+            ticket, 
+            existing_bdd_data
+        )
+        
+        logger.info(f'Collected application data for {ticket["key"]}: {len(application_data.get("elements", []))} elements')
+        return {**state, 'application_data': application_data}
+    
     def generate_tests(self, state: Dict) -> Dict:
         """Generate BDD tests for the current ticket"""
         ticket = state['current_ticket']
+        application_data = state.get('application_data', {})
         
         # Search for similar code
         query = f"{ticket['summary']} {ticket['description'][:200]}"
         similar_code = self.rag_tools.search_similar_code(query)
         
-        # Generate BDD scenarios and step definitions
-        generated = self.bdd_agent.generate_bdd_scenarios(ticket, similar_code)
+        # Generate BDD scenarios and step definitions with application data
+        generated = self.bdd_agent.generate_bdd_scenarios(ticket, similar_code, application_data)
         
         return {**state, 'generated_tests': generated}
     

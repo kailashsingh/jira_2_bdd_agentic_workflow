@@ -50,25 +50,45 @@ class GitHubTools:
                 
         return step_defs
     
-    def create_branch(self, branch_name: str) -> str:
+    def create_branch(self, branch_name: str, force_update: bool = True) -> str:
         """Create a new branch from the repo's default branch.
 
-        If the branch already exists, return it without error.
+        Args:
+            branch_name: Name of the branch to create
+            force_update: If True and branch exists, update it to latest default branch commit.
+                         If False and branch exists, return existing branch without changes.
         """
         default_branch_name = self.repo.default_branch
         base_branch = self.repo.get_branch(default_branch_name)
         ref = f"refs/heads/{branch_name}"
 
-        # If branch already exists, just return
+        # Check if branch already exists
         try:
-            self.repo.get_git_ref(f"heads/{branch_name}")
-            logger.info(f"Branch already exists: {branch_name}")
+            existing_ref = self.repo.get_git_ref(f"heads/{branch_name}")
+            if force_update:
+                try:
+                    # Try to update the existing branch to point to the latest default branch commit
+                    existing_ref.edit(sha=base_branch.commit.sha)
+                    logger.info(f"Updated existing branch '{branch_name}' to latest '{default_branch_name}' commit")
+                except GithubException as update_error:
+                    if update_error.status == 422 and "not a fast forward" in str(update_error):
+                        # Can't fast-forward, need to force update
+                        logger.warning(f"Cannot fast-forward update branch '{branch_name}'. Force updating...")
+                        existing_ref.edit(sha=base_branch.commit.sha, force=True)
+                        logger.info(f"Force updated existing branch '{branch_name}' to latest '{default_branch_name}' commit")
+                    else:
+                        logger.error(f"Failed updating branch {branch_name}: {update_error}")
+                        raise
+            else:
+                # Return existing branch without changes
+                logger.info(f"Branch already exists: {branch_name} (no update requested)")
             return branch_name
         except GithubException as e:
             if e.status != 404:
                 logger.error(f"Failed checking for existing branch {branch_name}: {e}")
                 raise
 
+        # Branch doesn't exist, create it
         try:
             self.repo.create_git_ref(ref=ref, sha=base_branch.commit.sha)
             logger.info(f"Created branch '{branch_name}' from '{default_branch_name}'")

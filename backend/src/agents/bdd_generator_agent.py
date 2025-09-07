@@ -39,7 +39,7 @@ class BDDGeneratorAgent:
         
         return "TRUE" in response.content.upper()
     
-    def generate_bdd_scenarios(self, ticket: Dict, existing_code: List[Dict]) -> Dict:
+    def generate_bdd_scenarios(self, ticket: Dict, existing_code: List[Dict], application_data: Dict = None) -> Dict:
         """Generate BDD scenarios and step definitions"""
         
         # Format existing code context
@@ -47,6 +47,24 @@ class BDDGeneratorAgent:
             f"File: {code['metadata']['path']}\n{code['content'][:500]}..."
             for code in existing_code[:3]
         ])
+        
+        # Format application data context
+        app_context = ""
+        if application_data:
+            app_context = f"""
+Application Data Collected:
+URL: {application_data.get('url', 'N/A')}
+Title: {application_data.get('title', 'N/A')}
+Elements Found: {len(application_data.get('elements', []))}
+Forms Found: {len(application_data.get('forms', []))}
+Navigation Flow: {', '.join(application_data.get('navigation_flow', []))}
+
+Key Elements:
+{chr(10).join([f"- {elem.get('type', 'unknown')}: {elem.get('text', elem.get('placeholder', 'N/A'))}" for elem in application_data.get('elements', [])[:10]])}
+
+Forms:
+{chr(10).join([f"- Form with {len(form.get('inputs', []))} inputs" for form in application_data.get('forms', [])[:3]])}
+"""
         
         prompt = ChatPromptTemplate.from_template("""
         You are a BDD test automation expert. Generate BDD scenarios and step definitions
@@ -61,6 +79,8 @@ class BDDGeneratorAgent:
         Existing Code Context:
         {code_context}
         
+        {app_context}
+        
         Generate:
         1. A Gherkin feature file with comprehensive scenarios
         2. TypeScript step definitions using WebDriverIO
@@ -70,6 +90,8 @@ class BDDGeneratorAgent:
         - Follow the coding patterns from the existing codebase
         - Include both happy path and edge cases
         - Use clear, business-readable language
+        - If application data is provided, use specific element selectors and navigation flows
+        - Include realistic test data based on the actual application elements found
         
         Format your response as:
         FEATURE_FILE:
@@ -82,7 +104,8 @@ class BDDGeneratorAgent:
         response = self.llm.invoke(
             prompt.format_messages(
                 **ticket,
-                code_context=code_context
+                code_context=code_context,
+                app_context=app_context
             )
         )
         
