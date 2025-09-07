@@ -7,9 +7,10 @@ An intelligent agentic workflow system that automatically generates BDD (Behavio
 This backend service provides a FastAPI-based REST API that orchestrates an automated workflow to:
 1. Fetch Jira tickets from sprints
 2. Analyze tickets to determine if they require BDD testing
-3. Generate BDD scenarios and step definitions using AI
-4. Create GitHub pull requests with the generated tests
-5. Update Jira tickets with progress information
+3. Navigate to applications using Playwright MCP for validation and data collection
+4. Generate BDD scenarios and step definitions using AI with application context
+5. Create GitHub pull requests with the generated tests
+6. Update Jira tickets with progress information
 
 ## Architecture
 
@@ -19,6 +20,7 @@ The system uses LangGraph for workflow orchestration and integrates with:
 - **OpenAI API** - For AI-powered BDD generation
 - **ChromaDB** - For RAG (Retrieval-Augmented Generation) with existing codebase
 - **Hugging Face API** - For embeddings (optional, falls back to local)
+- **Playwright MCP** - For automated application navigation and validation
 
 ## Available APIs
 
@@ -172,6 +174,132 @@ Debug endpoint to test Jira connection and fetch tickets.
 curl "http://localhost:8000/debug/jira-tickets"
 ```
 
+### 7. Test Application Navigation
+**POST** `/debug/test-navigation`
+
+Test application navigation functionality with a sample Jira ticket.
+
+**Request Body:**
+```json
+{
+  "summary": "User login functionality",
+  "description": "Navigate to https://example.com/login and test user authentication",
+  "acceptance_criteria": "User should be able to click on login button and enter credentials"
+}
+```
+
+**Response:**
+```json
+{
+  "navigation_needed": true,
+  "extracted_url": "https://example.com/login",
+  "navigation_instructions": [
+    "Navigate to https://example.com/login and test user authentication",
+    "User should be able to click on login button and enter credentials"
+  ],
+  "page_data": {
+    "url": "https://example.com/login",
+    "title": "Login Page",
+    "elements": [
+      {
+        "type": "button",
+        "text": "Login",
+        "selector": "#login-button"
+      }
+    ],
+    "forms": [
+      {
+        "action": "/login",
+        "method": "post",
+        "inputs": [
+          {
+            "type": "email",
+            "name": "email",
+            "placeholder": "Enter your email",
+            "required": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/debug/test-navigation" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "summary": "User login functionality",
+    "description": "Navigate to https://example.com/login and test user authentication",
+    "acceptance_criteria": "User should be able to click on login button and enter credentials"
+  }'
+```
+
+### 8. Validate Application URL
+**GET** `/debug/validate-url?url={url}`
+
+Validate if a URL is accessible and extract basic page information.
+
+**Parameters:**
+- `url` (string): URL to validate and analyze
+
+**Response:**
+```json
+{
+  "url": "https://example.com",
+  "accessible": true,
+  "title": "Example Domain",
+  "status_code": 200,
+  "elements_count": 15,
+  "forms_count": 2
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:8000/debug/validate-url?url=https://example.com"
+```
+
+## Application Navigation with Playwright MCP
+
+The system includes advanced application navigation capabilities powered by Playwright MCP (Model Context Protocol) through the `application_tools.py` module. This enables automated validation and data collection from web applications to enhance BDD test generation.
+
+### Key Features
+
+- **Automatic URL Extraction**: Extracts application URLs from Jira ticket data using pattern matching
+- **Navigation Instruction Parsing**: Identifies navigation steps from ticket descriptions and acceptance criteria
+- **Automated Browser Navigation**: Uses Playwright to navigate through applications and collect data
+- **Element Discovery**: Automatically discovers buttons, forms, inputs, and other interactive elements
+- **Screenshot Capture**: Takes screenshots at each navigation step for visual validation
+- **Form Analysis**: Analyzes form structures and input requirements
+
+### Navigation Process
+
+1. **URL Detection**: The system scans Jira ticket content for application URLs using regex patterns
+2. **Instruction Extraction**: Parses ticket descriptions for navigation keywords like "click", "enter", "navigate to"
+3. **Browser Automation**: Launches a headless Chromium browser and navigates to the detected URL
+4. **Element Collection**: Captures page elements including buttons, links, forms, and inputs
+5. **Navigation Execution**: Attempts to execute extracted navigation instructions
+6. **Data Aggregation**: Collects all discovered elements and navigation flow for BDD generation
+
+### Supported Navigation Patterns
+
+The system recognizes and executes common navigation patterns:
+- **Click Actions**: `click on`, `select`, `press`
+- **Form Interactions**: `enter`, `fill`, `type`
+- **Navigation**: `navigate to`, `go to`, `visit`
+- **Search Operations**: `search for`, `find`
+- **Authentication**: `login`, `sign in`
+
+### Integration with BDD Generation
+
+The collected application data enhances BDD test generation by:
+- Providing real element selectors and attributes
+- Capturing actual form structures and validation rules
+- Documenting navigation flows with screenshots
+- Ensuring generated tests match the actual application interface
+
 ## Workflow Flow Diagram
 
 ```mermaid
@@ -182,21 +310,30 @@ graph TD
     D --> E{Is Ticket Testable?}
     E -->|No| F[Move to Next Ticket]
     E -->|Yes| G[Search Similar Code via RAG]
-    G --> H[Generate BDD Scenarios]
-    H --> I[Create GitHub Branch]
-    I --> J[Create Feature File]
-    J --> K[Create Step Definitions]
-    K --> L[Create Pull Request]
-    L --> M[Update Jira Comment]
-    M --> F
-    F --> N{More Tickets?}
-    N -->|Yes| D
-    N -->|No| O[Workflow Complete]
+    G --> H{Application URL Found?}
+    H -->|Yes| I[Navigate to Application]
+    H -->|No| J[Generate BDD Scenarios]
+    I --> K[Collect Application Data]
+    K --> L[Validate Navigation Flow]
+    L --> J[Generate BDD Scenarios]
+    J --> M[Create GitHub Branch]
+    M --> N[Create Feature File]
+    N --> O[Create Step Definitions]
+    O --> P[Create Pull Request]
+    P --> Q[Update Jira Comment]
+    Q --> F
+    F --> R{More Tickets?}
+    R -->|Yes| D
+    R -->|No| S[Workflow Complete]
     
     style A fill:#e1f5fe
-    style O fill:#c8e6c9
+    style S fill:#c8e6c9
     style E fill:#fff3e0
-    style N fill:#fff3e0
+    style H fill:#fff3e0
+    style R fill:#fff3e0
+    style I fill:#f3e5f5
+    style K fill:#f3e5f5
+    style L fill:#f3e5f5
 ```
 
 ## Setup Instructions
@@ -208,6 +345,7 @@ graph TD
 - GitHub repository with appropriate permissions
 - OpenAI API key
 - (Optional) Hugging Face API key for embeddings
+- Playwright browser dependencies (automatically installed)
 
 ### 1. Environment Configuration
 
@@ -240,7 +378,17 @@ cd backend
 pip install -r requirements.txt
 ```
 
-### 3. Required API Keys and Tokens
+### 3. Install Playwright Browsers
+
+After installing the Python dependencies, install the required browser binaries:
+
+```bash
+playwright install chromium
+```
+
+This installs the Chromium browser that will be used for automated navigation.
+
+### 4. Required API Keys and Tokens
 
 #### Jira API Token
 1. Go to [Atlassian Account Settings](https://id.atlassian.com/manage-profile/security/api-tokens)
@@ -265,7 +413,7 @@ pip install -r requirements.txt
 3. Select "Read" access
 4. Copy the generated token
 
-### 4. Repository Structure
+### 5. Repository Structure
 
 Ensure your GitHub repository has the following structure:
 ```
@@ -276,7 +424,7 @@ your-repo/
 └── ...
 ```
 
-### 5. Run the Application
+### 6. Run the Application
 
 #### Development Mode
 ```bash
@@ -292,7 +440,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 The API will be available at `http://localhost:8000`
 
-### 6. Verify Installation
+### 7. Verify Installation
 
 Test the health endpoint:
 ```bash
@@ -302,6 +450,17 @@ curl http://localhost:8000/health
 Test Jira connection:
 ```bash
 curl http://localhost:8000/debug/jira-tickets
+```
+
+Test application navigation:
+```bash
+curl -X POST "http://localhost:8000/debug/test-navigation" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "summary": "Test navigation",
+    "description": "Navigate to https://example.com",
+    "acceptance_criteria": "Page should load successfully"
+  }'
 ```
 
 ## Usage Examples
@@ -359,6 +518,12 @@ curl "http://localhost:8000/workflow/runs"
 4. **Empty RAG Search Results**
    - Ensure the repository has existing feature files
    - Check if the codebase indexing completed successfully
+
+5. **Playwright Navigation Issues**
+   - Ensure Chromium browser is installed: `playwright install chromium`
+   - Check if the target URL is accessible and doesn't require authentication
+   - Verify network connectivity to the target application
+   - Check browser logs for JavaScript errors or blocked resources
 
 ### Logs
 

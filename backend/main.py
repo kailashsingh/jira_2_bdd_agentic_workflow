@@ -23,6 +23,25 @@ class WorkflowResponse(BaseModel):
     started_at: str
     message: str
 
+class NavigationTestRequest(BaseModel):
+    summary: str
+    description: str
+    acceptance_criteria: str
+
+class NavigationTestResponse(BaseModel):
+    navigation_needed: bool
+    extracted_url: Optional[str] = None
+    navigation_instructions: List[str] = []
+    page_data: Optional[dict] = None
+
+class UrlValidationResponse(BaseModel):
+    url: str
+    accessible: bool
+    title: Optional[str] = None
+    status_code: Optional[int] = None
+    elements_count: Optional[int] = None
+    forms_count: Optional[int] = None
+
 # Store for workflow runs (in production, use a database)
 workflow_runs = {}
 
@@ -104,6 +123,94 @@ async def debug_jira_tickets():
     tickets = jira_tools.get_sprint_tickets()
     logger.info(f"Debug endpoint: Found {len(tickets)} tickets")
     return {"tickets": tickets}
+
+@app.post("/debug/test-navigation", response_model=NavigationTestResponse)
+async def test_navigation(request: NavigationTestRequest):
+    """Test application navigation functionality with sample Jira ticket data"""
+    logger.info("Debug endpoint: Testing application navigation")
+    
+    try:
+        from src.tools.application_tools import ApplicationTools
+        
+        # Create mock Jira data from request
+        jira_data = {
+            'summary': request.summary,
+            'description': request.description,
+            'acceptance_criteria': request.acceptance_criteria,
+            'key': 'TEST-NAV'
+        }
+        
+        app_tools = ApplicationTools()
+        
+        # Check if navigation is needed
+        navigation_needed = app_tools.needs_navigation(jira_data)
+        
+        if not navigation_needed:
+            return NavigationTestResponse(
+                navigation_needed=False,
+                navigation_instructions=[]
+            )
+        
+        # Extract URL and instructions
+        extracted_url = app_tools._extract_url_from_jira_data(jira_data)
+        navigation_instructions = app_tools._extract_navigation_instructions(jira_data)
+        
+        # Navigate and collect data
+        page_data = app_tools.navigate_and_collect_data(jira_data)
+        
+        return NavigationTestResponse(
+            navigation_needed=True,
+            extracted_url=extracted_url,
+            navigation_instructions=navigation_instructions,
+            page_data=page_data
+        )
+        
+    except Exception as e:
+        logger.error(f"Navigation test failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Navigation test failed: {str(e)}")
+
+@app.get("/debug/validate-url", response_model=UrlValidationResponse)
+async def validate_url(url: str):
+    """Validate if a URL is accessible and extract basic page information"""
+    logger.info(f"Debug endpoint: Validating URL {url}")
+    
+    try:
+        from src.tools.application_tools import ApplicationTools
+        
+        app_tools = ApplicationTools()
+        app_tools.start_browser()
+        
+        try:
+            # Navigate to the URL
+            app_tools.page.goto(url, wait_until='networkidle', timeout=10000)
+            
+            # Get basic page information
+            title = app_tools.page.title()
+            elements = app_tools._collect_page_elements()
+            forms = app_tools._collect_forms()
+            
+            return UrlValidationResponse(
+                url=url,
+                accessible=True,
+                title=title,
+                status_code=200,
+                elements_count=len(elements),
+                forms_count=len(forms)
+            )
+            
+        except Exception as e:
+            logger.warning(f"Failed to access URL {url}: {str(e)}")
+            return UrlValidationResponse(
+                url=url,
+                accessible=False,
+                status_code=500
+            )
+        finally:
+            app_tools.close_browser()
+            
+    except Exception as e:
+        logger.error(f"URL validation failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"URL validation failed: {str(e)}")
 
 if __name__ == "__main__":
     logger.info("Starting FastAPI server")
