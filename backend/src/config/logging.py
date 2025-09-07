@@ -1,5 +1,6 @@
 import logging
 import sys
+import io
 from pathlib import Path
 
 def setup_logging(log_level: str = "INFO", log_file: str = "workflow.log"):
@@ -18,11 +19,22 @@ def setup_logging(log_level: str = "INFO", log_file: str = "workflow.log"):
     log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     date_format = "%Y-%m-%d %H:%M:%S"
     
-    # Configure handlers
-    handlers = [
-        logging.FileHandler(log_dir / log_file),
-        logging.StreamHandler(sys.stdout)
-    ]
+    # Configure handlers (ensure UTF-8 everywhere)
+    file_handler = logging.FileHandler(log_dir / log_file, encoding="utf-8")
+
+    # Wrap stdout with UTF-8 if needed to avoid UnicodeEncodeError on Windows consoles
+    stdout_stream = sys.stdout
+    try:
+        encoding_name = getattr(sys.stdout, "encoding", None) or ""
+        if encoding_name.lower() != "utf-8":
+            stdout_stream = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    except Exception:
+        # Fallback to default stdout if wrapping fails
+        stdout_stream = sys.stdout
+
+    stream_handler = logging.StreamHandler(stdout_stream)
+
+    handlers = [file_handler, stream_handler]
     
     # Setup basic configuration
     logging.basicConfig(

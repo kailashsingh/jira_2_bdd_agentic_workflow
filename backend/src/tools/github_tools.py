@@ -1,4 +1,5 @@
 from github import Github
+from github.GithubException import GithubException
 from typing import List, Optional, Dict
 import base64
 from src.config.settings import settings
@@ -16,7 +17,7 @@ class GitHubTools:
 
         logger.info(f"Fetching feature files from {settings.github_repo}")
         features = []
-        contents = self.repo.get_contents("src")
+        contents = self.repo.get_contents("src/features")
         
         for content_file in contents:
             if content_file.path.endswith('.feature'):
@@ -35,7 +36,7 @@ class GitHubTools:
 
         logger.info(f"Fetching step definitions from {settings.github_repo}")
         step_defs = []
-        contents = self.repo.get_contents("src")
+        contents = self.repo.get_contents("src/step-definitions")
         
         for content_file in contents:
             if content_file.path.endswith('.ts'):
@@ -50,11 +51,39 @@ class GitHubTools:
         return step_defs
     
     def create_branch(self, branch_name: str) -> str:
-        """Create a new branch from main"""
-        main_branch = self.repo.get_branch("main")
+        """Create a new branch from the repo's default branch.
+
+        If the branch already exists, return it without error.
+        """
+        default_branch_name = self.repo.default_branch
+        base_branch = self.repo.get_branch(default_branch_name)
         ref = f"refs/heads/{branch_name}"
-        self.repo.create_git_ref(ref=ref, sha=main_branch.commit.sha)
-        return branch_name
+
+        # If branch already exists, just return
+        try:
+            self.repo.get_git_ref(f"heads/{branch_name}")
+            logger.info(f"Branch already exists: {branch_name}")
+            return branch_name
+        except GithubException as e:
+            if e.status != 404:
+                logger.error(f"Failed checking for existing branch {branch_name}: {e}")
+                raise
+
+        try:
+            self.repo.create_git_ref(ref=ref, sha=base_branch.commit.sha)
+            logger.info(f"Created branch '{branch_name}' from '{default_branch_name}'")
+            return branch_name
+        except GithubException as e:
+            # 422 often indicates the ref exists or update failed due to race; re-check and return if present
+            if e.status == 422:
+                try:
+                    self.repo.get_git_ref(f"heads/{branch_name}")
+                    logger.info(f"Branch appeared concurrently: {branch_name}")
+                    return branch_name
+                except GithubException:
+                    pass
+            logger.error(f"Failed creating branch {branch_name}: {e}")
+            raise
     
     def create_or_update_file(self, file_path: str, content: str, 
                               branch: str, message: str):

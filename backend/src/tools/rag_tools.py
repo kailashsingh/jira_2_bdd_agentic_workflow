@@ -1,4 +1,5 @@
 import chromadb
+from chromadb.config import Settings as ChromaSettings
 from chromadb.utils import embedding_functions
 from typing import List, Dict
 from src.config.settings import settings
@@ -8,10 +9,35 @@ logger = get_logger(__name__)
 
 class RAGTools:
     def __init__(self):
-        self.client = chromadb.PersistentClient(path=settings.vector_db_path)
-        self.embedding_function = embedding_functions.HuggingFaceEmbeddingFunction(
-            api_key=settings.huggingface_api_key
+        self.client = chromadb.PersistentClient(
+            path=settings.vector_db_path,
+            settings=ChromaSettings(anonymized_telemetry=False)
         )
+        self.embedding_function = None
+        # Prefer HF Inference API if key is present, otherwise fall back to local embeddings
+        hf_key = getattr(settings, 'huggingface_api_key', None)
+        if hf_key:
+            try:
+                # Explicitly specify a widely available sentence-transformers model for the Inference API
+                hf_func = embedding_functions.HuggingFaceEmbeddingFunction(
+                    api_key=hf_key,
+                    model_name="sentence-transformers/all-MiniLM-L6-v2"
+                )
+                # Preflight a tiny request to catch JSONDecodeError/non-JSON responses early
+                _ = hf_func(input=["healthcheck"])
+                self.embedding_function = hf_func
+                logger.debug("Using Hugging Face Inference API for embeddings.")
+            except Exception as e:
+                logger.warning(
+                    "Hugging Face embedding preflight failed; falling back to local SentenceTransformer. Error: %s",
+                    str(e)
+                )
+        if self.embedding_function is None:
+            # Local embeddings avoid network/API errors; model downloads on first use
+            self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="sentence-transformers/all-MiniLM-L6-v2"
+            )
+            logger.debug("Using local SentenceTransformer embeddings.")
         self.collection = None
         self._initialize_collection()
     
@@ -60,11 +86,21 @@ class RAGTools:
         
         # Add to collection
         if documents:
-            self.collection.upsert(
-                documents=documents,
-                metadatas=metadatas,
-                ids=ids
-            )
+            try:
+                self.collection.upsert(
+                    documents=documents,
+                    metadatas=metadatas,
+                    ids=ids
+                )
+            except Exception as e:
+                # Most common cause: HF Inference API returned non-JSON (e.g., 401/403/5xx or HTML)
+                logger.error(
+                    "Failed to upsert into Chroma collection due to embedding error. "
+                    "This often indicates an invalid/missing Hugging Face API key, an unavailable model, "
+                    "or a non-JSON response from the HF Inference API. Error: %s", str(e)
+                )
+                raise
+        logger.info(f'Indexing completed for \'bdd_codebase\' for RAG')
     
     def search_similar_code(self, query: str, n_results: int = 5) -> List[Dict]:
         """Search for similar code in the indexed codebase"""
