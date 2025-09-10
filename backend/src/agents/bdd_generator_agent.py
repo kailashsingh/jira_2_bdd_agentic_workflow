@@ -10,14 +10,10 @@ logger = get_logger(__name__)
 class BDDGeneratorAgent:
     def __init__(self, rag_tools):
         logger.info(f'OpenAI Model Used: {settings.model_name}')
-        # self.llm = ChatOpenAI(
-        #     model=settings.model_name,
-        #     temperature=0.2,
-        #     api_key=settings.openai_api_key,
-        # )
-        self.llm = ChatOllama(
-            model='gpt-oss:20b',
+        self.llm = ChatOpenAI(
+            model=settings.model_name,
             temperature=0.2,
+            api_key=settings.openai_api_key,
         )
         self.rag_tools = rag_tools
     
