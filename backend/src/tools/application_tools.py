@@ -2,6 +2,11 @@ from playwright.sync_api import sync_playwright, Page, Browser
 from typing import Dict, List, Optional, Any
 import re
 import json
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from langchain_mcp_adapters.tools import load_mcp_tools
+from langgraph.prebuilt import create_react_agent
+from src.agents.bdd_generator_agent import BDDGeneratorAgent
 from src.config.logging import get_logger
 
 logger = get_logger(__name__)
@@ -16,11 +21,13 @@ class ApplicationTools:
         """Extract application URL from Jira ticket data"""
         text_content = f"{jira_data.get('summary', '')} {jira_data.get('description', '')} {jira_data.get('acceptance_criteria', '')}"
         
+        logger.debug(f'Extracting URL from text content: {text_content}...')  
+
         # Look for URLs in the text
         url_patterns = [
-            r'https?://[^\s<>"{}|\\^`\[\]]+',
-            r'www\.[^\s<>"{}|\\^`\[\]]+',
-            r'[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/[^\s<>"{}|\\^`\[\]]*)?'
+            r'https?://[^\s<>"{}|\\^`\[\]]+(?<!/)',  # URLs starting with http(s)
+            r'www\.[^\s<>"{}|\\^`\[\]]+(?<!/)',      # URLs starting with www
+            r'[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/[^\s<>"{}|\\^`\[\]/]+)?(?<!/)'  # Domain names with optional path
         ]
         
         for pattern in url_patterns:
@@ -85,6 +92,69 @@ class ApplicationTools:
             self.playwright = None
         logger.info("Browser closed")
     
+    async def navigate_and_collect_data_using_mcp(self, jira_data: Dict, bdd_agent: BDDGeneratorAgent) -> str:
+        # Configure your MCP server (path to your math_server.py)
+        server_params = StdioServerParameters(
+            command="npx",
+            args=["@playwright/mcp"],  # Replace with actual path
+        )
+
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                tools = await load_mcp_tools(session)
+
+                # llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro")
+                agent = create_react_agent(model=bdd_agent.llm, tools=tools)
+
+                text_content = f"Summary:\n{jira_data.get('summary', '')}\n\nDescription:\n{jira_data.get('description', '')}\n\nAcceptance Criteria:\n{jira_data.get('acceptance_criteria', '')}"
+                prompt = f"""
+You are a Playwright-MCP browser agent. Execute the following user scenario using the Playwright-MCP tools (e.g., browser_navigate, browser_fill, browser_click, browser_wait_for, browser_screenshot, browser_evaluate, playwright_get_visible_text), and **only output a single, valid JSON object** containing the collected data.
+
+Important:
+- **Do execute** the scenario via MCP tools.
+- **Do NOT output any descriptive text, code, or comments**.
+- **Only** return one JSON object with this exact structure:
+
+{{
+"url": "...",
+"title": "...",
+"tools called": ["..."],
+"elements": [
+{{"type":"...","text":"...","selector":"..."}},
+...
+],
+"forms": [
+{{"action":"...","method":"...","inputs":[{{"type":"...","name":"...","placeholder":"...","required":...}}, ...]}}
+],
+"navigation_flow": [
+"..."
+]
+}}
+
+### Scenario to execute:
+{text_content}
+
+### Capturing Requirements:
+- After each significant step (navigation, search input, search results, add to cart, cart update), capture a screenshot via `playwright_screenshot`, and save its identifier in `screenshots`.
+- Append a descriptive entry to `navigation_flow` for each action taken, e.g., "Navigated to homepage", "Searched for 'wireless mouse'", "Clicked Add to Cart", etc.
+- After completing the flow:
+- Extract the **actual current page URL** using an MCP method such as `playwright_evaluate("return window.location.href")`.
+- Extract the **page title** via `playwright_evaluate("return document.title")`.
+- Extract visible **buttons, links, inputs** into the `elements` array, including type, text (or value), and selector.
+- Extract any **forms**, including action, method, and contained inputs with their attributes.
+- **DO NOT** include any explanation—just return the filled JSON object.
+    """
+                
+                logger.debug(f'Navigation prompt: {prompt}...')   
+
+                response = await agent.ainvoke({"messages":prompt}) 
+                message = response['messages'][-1].content
+                logger.debug(f'Navigation response: {message}...')
+
+                return message
+
     def navigate_and_collect_data(self, jira_data: Dict, existing_bdd_data: Optional[str] = None) -> Dict[str, Any]:
         """Navigate to application and collect data for BDD generation"""
         try:
@@ -117,6 +187,8 @@ class ApplicationTools:
             # Extract navigation instructions
             instructions = self._extract_navigation_instructions(jira_data)
             
+            logger.debug(f'Navigation instructions: {instructions}')
+
             # Execute navigation instructions
             for instruction in instructions[:5]:  # Limit to first 5 instructions
                 try:

@@ -59,7 +59,6 @@ class RAGTools:
     def index_codebase(self, features: List[Dict], step_defs: List[Dict]):
         """Index the BDD codebase for RAG"""
 
-        logger.info(f'Indexing the \'bdd_codebase\' for RAG')
         documents = []
         metadatas = []
         ids = []

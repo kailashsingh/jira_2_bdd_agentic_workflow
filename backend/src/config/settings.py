@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     # GitHub settings
     github_token: str = ""
     github_repo: str = ""
-    github_branch_prefix: str = "feature/auto-bdd"
+    github_branch_prefix: str = "feature"
     
     # LLM settings
     openai_api_key: str

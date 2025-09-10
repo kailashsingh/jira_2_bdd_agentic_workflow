@@ -1,4 +1,5 @@
 from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
 from langchain.prompts import ChatPromptTemplate
 from typing import Dict, List
 from src.config.settings import settings
@@ -9,10 +10,14 @@ logger = get_logger(__name__)
 class BDDGeneratorAgent:
     def __init__(self, rag_tools):
         logger.info(f'OpenAI Model Used: {settings.model_name}')
-        self.llm = ChatOpenAI(
-            model=settings.model_name,
+        # self.llm = ChatOpenAI(
+        #     model=settings.model_name,
+        #     temperature=0.2,
+        #     api_key=settings.openai_api_key,
+        # )
+        self.llm = ChatOllama(
+            model='gpt-oss:20b',
             temperature=0.2,
-            api_key=settings.openai_api_key,
         )
         self.rag_tools = rag_tools
     
@@ -51,20 +56,21 @@ class BDDGeneratorAgent:
         # Format application data context
         app_context = ""
         if application_data:
-            app_context = f"""
-Application Data Collected:
-URL: {application_data.get('url', 'N/A')}
-Title: {application_data.get('title', 'N/A')}
-Elements Found: {len(application_data.get('elements', []))}
-Forms Found: {len(application_data.get('forms', []))}
-Navigation Flow: {', '.join(application_data.get('navigation_flow', []))}
+            app_context = f"Application Data Collected:{app_context}"
+#             app_context = f"""
+# Application Data Collected:
+# URL: {application_data.get('url', 'N/A')}
+# Title: {application_data.get('title', 'N/A')}
+# Elements Found: {len(application_data.get('elements', []))}
+# Forms Found: {len(application_data.get('forms', []))}
+# Navigation Flow: {', '.join(application_data.get('navigation_flow', []))}
 
-Key Elements:
-{chr(10).join([f"- {elem.get('type', 'unknown')}: {elem.get('text', elem.get('placeholder', 'N/A'))}" for elem in application_data.get('elements', [])[:10]])}
+# Key Elements:
+# {chr(10).join([f"- {elem.get('type', 'unknown')}: {elem.get('text', elem.get('placeholder', 'N/A'))}" for elem in application_data.get('elements', [])[:10]])}
 
-Forms:
-{chr(10).join([f"- Form with {len(form.get('inputs', []))} inputs" for form in application_data.get('forms', [])[:3]])}
-"""
+# Forms:
+# {chr(10).join([f"- Form with {len(form.get('inputs', []))} inputs" for form in application_data.get('forms', [])[:3]])}
+# """
         
         prompt = ChatPromptTemplate.from_template("""
         You are a BDD test automation expert. Generate BDD scenarios and step definitions
@@ -109,6 +115,8 @@ Forms:
             )
         )
         
+        logger.info(f'BDD Generation LLM Response: {response.content[:10]}...')
+
         # Parse the response
         content = response.content
         feature_start = content.find("FEATURE_FILE:") + len("FEATURE_FILE:")

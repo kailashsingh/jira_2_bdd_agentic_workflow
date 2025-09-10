@@ -8,7 +8,7 @@ from datetime import datetime
 from src.config.logging import setup_logging, get_logger
 
 # Set up logging with DEBUG level to see all logs
-setup_logging(log_level="DEBUG")
+setup_logging(log_level="INFO")
 logger = get_logger(__name__)
 
 app = FastAPI(title="Jira to BDD Agent API")              
@@ -77,7 +77,8 @@ async def run_workflow_async(run_id: str, sprint_id: Optional[int]):
         orchestrator = WorkflowOrchestrator()
         
         logger.info(f"Running orchestrator for sprint_id={sprint_id}")
-        result = await asyncio.to_thread(orchestrator.run, sprint_id)
+        # result = await asyncio.to_thread(orchestrator.run, sprint_id)
+        result = await orchestrator.run(sprint_id)
         
         logger.info(f"Workflow {run_id} completed successfully")
         workflow_runs[run_id]['status'] = 'completed'

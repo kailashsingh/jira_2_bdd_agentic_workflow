@@ -14,7 +14,6 @@ class JiraTools:
     
     def get_sprint_tickets(self, sprint_id: Optional[int] = None) -> List[Dict]:
         """Fetch all tickets from a sprint or active sprint"""
-        logger.info(f"Fetching tickets for sprint_id: {sprint_id if sprint_id else 'active sprint'}")
         
         jql = f"sprint = {sprint_id}" if sprint_id else "sprint in openSprints()"
         logger.debug(f"Using JQL query: {jql}")
@@ -35,7 +34,7 @@ class JiraTools:
             tickets.append(ticket)
             
             # Log each ticket's details
-            logger.info(f"Ticket {ticket['key']}: {ticket['summary']} ({ticket['status']})")
+            logger.debug(f"Ticket {ticket['key']}: {ticket['summary']} ({ticket['status']})")
             logger.debug(f"Ticket details for {ticket['key']}:")
             logger.debug(f"  Type: {ticket['issue_type']}")
             logger.debug(f"  Description: {ticket['description'][:100]}...")
