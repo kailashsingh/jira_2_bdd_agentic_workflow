@@ -2,6 +2,7 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from chromadb.utils import embedding_functions
 from typing import List, Dict
+from src.agents.bdd_generator_agent import BDDGeneratorAgent
 from src.config.settings import settings
 from src.config.logging import get_logger
 
@@ -56,7 +57,7 @@ class RAGTools:
                 embedding_function=self.embedding_function
             )
     
-    def index_codebase(self, features: List[Dict], step_defs: List[Dict]):
+    def index_codebase(self, features: List[Dict], step_defs: List[Dict], llmAgent: BDDGeneratorAgent):
         """Index the BDD codebase for RAG"""
 
         documents = []
@@ -65,23 +66,25 @@ class RAGTools:
         
         # Index feature files
         for idx, feature in enumerate(features):
-            documents.append(feature['content'])
+            description = llmAgent.generate_description_of_file(feature['path'], feature['content'])
+            documents.append(description)
             metadatas.append({
                 'type': 'feature',
                 'path': feature['path'],
-                'name': feature['name']
+                'content': feature['content']
             })
-            ids.append(f"feature_{idx}")
+            ids.append(feature['name'])
         
         # Index step definitions
         for idx, step_def in enumerate(step_defs):
-            documents.append(step_def['content'])
+            description = llmAgent.generate_description_of_file(step_def['path'], step_def['content'])
+            documents.append(description)
             metadatas.append({
                 'type': 'step_definition',
                 'path': step_def['path'],
-                'name': step_def['name']
+                'content': step_def['content']
             })
-            ids.append(f"step_def_{idx}")
+            ids.append(step_def['name'])
         
         # Add to collection
         if documents:

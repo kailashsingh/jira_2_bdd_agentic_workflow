@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     # LLM settings
     openai_api_key: str
     huggingface_api_key: str
-    model_name: str = "gpt-4"
+    anthropic_api_key: str
+    model_name: str = "claude-3-7-sonnet-latest"
     
     # RAG settings
     vector_db_path: str = "./chroma_db"

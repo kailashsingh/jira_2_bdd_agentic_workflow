@@ -73,7 +73,7 @@ class WorkflowOrchestrator:
 
         logger.info(f'Indexing the \'bdd_codebase\' for RAG')
 
-        self.rag_tools.index_codebase(features, step_defs)
+        self.rag_tools.index_codebase(features, step_defs, self.bdd_agent)
         return {**state, 'codebase_indexed': True}
     
     def process_ticket(self, state: Dict) -> Dict:
@@ -160,8 +160,8 @@ class WorkflowOrchestrator:
         self.github_tools.create_branch(branch_name)
         
         # Create/update files
-        feature_path = f"features/{ticket_key.lower()}.feature"
-        step_def_path = f"step-definitions/{ticket_key.lower()}.steps.ts"
+        feature_path = f"{generated['feature_file_name']}"
+        step_def_path = f"{generated['steps_file_name']}"
         
         self.github_tools.create_or_update_file(
             feature_path,
@@ -209,6 +209,6 @@ class WorkflowOrchestrator:
     async def run(self, sprint_id: Optional[int] = None) -> Dict:
         """Execute the workflow"""
         initial_state = {'sprint_id': sprint_id}
-        result = await self.workflow.ainvoke(initial_state)
+        result = await self.workflow.ainvoke(initial_state, config={"recurssionLimit": 10})
         logger.debug(f"Workflow run result: {result}")
         return result
