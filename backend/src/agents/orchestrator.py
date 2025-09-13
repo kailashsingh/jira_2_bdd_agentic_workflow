@@ -1,5 +1,6 @@
 from langgraph.graph import Graph, END
 from typing import Dict, Any, Optional
+import asyncio
 from src.tools.jira_tools import JiraTools
 from src.tools.github_tools import GitHubTools
 from src.tools.rag_tools import RAGTools
@@ -31,28 +32,25 @@ class WorkflowOrchestrator:
         workflow.add_node("navigate_application", self.navigate_application)
         workflow.add_node("generate_tests", self.generate_tests)
         workflow.add_node("create_pr", self.create_pr)
+        workflow.add_node("next_ticket", self.next_ticket)
         
         # Define edges
         workflow.add_edge("fetch_jira_tickets", "index_codebase")
         workflow.add_edge("index_codebase", "process_ticket")
         workflow.add_conditional_edges(
             "process_ticket",
-            self.should_navigate_application,
+            self.decide_next_node_post_process_ticket,
             {
-                True: "navigate_application",
-                False: "generate_tests"
+                "navigate_application": "navigate_application",
+                "generate_tests": "generate_tests",
+                "next_ticket": "next_ticket",
+                END: END
             }
         )
         workflow.add_edge("navigate_application", "generate_tests")
-        workflow.add_conditional_edges(
-            "generate_tests",
-            self.should_generate_tests,
-            {
-                True: "create_pr",
-                False: END
-            }
-        )
-        workflow.add_edge("create_pr", "process_ticket")
+        workflow.add_edge("generate_tests", "create_pr")
+        workflow.add_edge("create_pr", "next_ticket")
+        workflow.add_edge("next_ticket", "process_ticket")
         
         # Set entry point
         workflow.set_entry_point("fetch_jira_tickets")
@@ -62,6 +60,9 @@ class WorkflowOrchestrator:
     def fetch_jira_tickets(self, state: Dict) -> Dict:
         """Fetch tickets from Jira"""
         sprint_id = state.get('sprint_id')
+
+        logger.info(f"Fetching tickets for sprint_id: {sprint_id if sprint_id else 'active sprint'}")
+
         tickets = self.jira_tools.get_sprint_tickets(sprint_id)
         return {**state, 'tickets': tickets, 'current_ticket_index': 0}
     
@@ -69,7 +70,10 @@ class WorkflowOrchestrator:
         """Index the existing BDD codebase"""
         features = self.github_tools.get_feature_files()
         step_defs = self.github_tools.get_step_definitions()
-        self.rag_tools.index_codebase(features, step_defs)
+
+        logger.info(f'Indexing the \'bdd_codebase\' for RAG')
+
+        self.rag_tools.index_codebase(features, step_defs, self.bdd_agent)
         return {**state, 'codebase_indexed': True}
     
     def process_ticket(self, state: Dict) -> Dict:
@@ -90,22 +94,26 @@ class WorkflowOrchestrator:
             'is_testable': is_testable
         }
     
+    def decide_next_node_post_process_ticket(self, state: Dict) -> str:
+        """Decide the next node after processing a ticket"""
+
+        if state.get('completed', False):
+            return END
+        
+        if state.get('is_testable', False):
+            return "navigate_application" if self.should_navigate_application(state) else "generate_tests"
+        return "next_ticket"
+
     def should_navigate_application(self, state: Dict) -> bool:
         """Conditional edge to determine if application navigation is needed"""
-        if not state.get('is_testable', False) or state.get('completed', False):
-            return False
         
         current_ticket = state.get('current_ticket')
         if not current_ticket:
             return False
         
         return self.application_tools.needs_navigation(current_ticket)
-    
-    def should_generate_tests(self, state: Dict) -> bool:
-        """Conditional edge to determine if tests should be generated"""
-        return state.get('is_testable', False) and not state.get('completed', False)
-    
-    def navigate_application(self, state: Dict) -> Dict:
+
+    async def navigate_application(self, state: Dict) -> Dict:
         """Navigate to application and collect data"""
         ticket = state['current_ticket']
         logger.info(f'Navigating application for ticket: {ticket["key"]}')
@@ -115,19 +123,21 @@ class WorkflowOrchestrator:
         existing_bdd_data = self.rag_tools.search_similar_code(query)
         
         # Navigate and collect application data
-        application_data = self.application_tools.navigate_and_collect_data(
+        application_data = await self.application_tools.navigate_and_collect_data_using_mcp(
             ticket, 
-            existing_bdd_data
+            self.bdd_agent
         )
-        
-        logger.info(f'Collected application data for {ticket["key"]}: {len(application_data.get("elements", []))} elements')
+
+        logger.info(f'Collected application data for {ticket["key"]}: {len(application_data.split(" "))} words')
         return {**state, 'application_data': application_data}
     
     def generate_tests(self, state: Dict) -> Dict:
         """Generate BDD tests for the current ticket"""
         ticket = state['current_ticket']
-        application_data = state.get('application_data', {})
+        application_data = state.get('application_data', '')
         
+        logger.info(f'Generating BDD tests for ticket: {ticket["key"]}')
+
         # Search for similar code
         query = f"{ticket['summary']} {ticket['description'][:200]}"
         similar_code = self.rag_tools.search_similar_code(query)
@@ -139,6 +149,9 @@ class WorkflowOrchestrator:
     
     def create_pr(self, state: Dict) -> Dict:
         """Create a PR with the generated tests"""
+
+        logger.info(f'Creating PR for ticket: {state["current_ticket"]["key"]}')
+
         generated = state['generated_tests']
         ticket_key = generated['ticket_key']
         
@@ -147,8 +160,8 @@ class WorkflowOrchestrator:
         self.github_tools.create_branch(branch_name)
         
         # Create/update files
-        feature_path = f"features/{ticket_key.lower()}.feature"
-        step_def_path = f"step-definitions/{ticket_key.lower()}.steps.ts"
+        feature_path = f"{generated['feature_file_name']}"
+        step_def_path = f"{generated['steps_file_name']}"
         
         self.github_tools.create_or_update_file(
             feature_path,
@@ -172,6 +185,8 @@ class WorkflowOrchestrator:
             f"Generated from: {state['current_ticket']['summary']}"
         )
         
+        logger.info(f'Created PR for ticket {ticket_key}: {pr_url}')
+
         # Update Jira ticket
         comment = f"BDD tests have been auto-generated for this ticket.\n"
         comment += f"Pull Request: {pr_url}"
@@ -180,12 +195,20 @@ class WorkflowOrchestrator:
         # Move to next ticket
         return {
             **state,
-            'current_ticket_index': state['current_ticket_index'] + 1,
             'pr_urls': state.get('pr_urls', []) + [pr_url]
         }
     
-    def run(self, sprint_id: Optional[int] = None) -> Dict:
+    def next_ticket(self, state: Dict) -> Dict:
+        """Move to the next ticket"""
+
+        return {
+            **state,
+            'current_ticket_index': state['current_ticket_index'] + 1
+        }
+    
+    async def run(self, sprint_id: Optional[int] = None) -> Dict:
         """Execute the workflow"""
         initial_state = {'sprint_id': sprint_id}
-        result = self.workflow.invoke(initial_state)
+        result = await self.workflow.ainvoke(initial_state, config={"recurssionLimit": 10})
+        logger.debug(f"Workflow run result: {result}")
         return result
