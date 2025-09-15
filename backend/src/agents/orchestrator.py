@@ -27,19 +27,29 @@ class WorkflowOrchestrator:
         
         # Define nodes
         workflow.add_node("fetch_jira_tickets", self.fetch_jira_tickets)
-        workflow.add_node("index_codebase", self.index_codebase)
         workflow.add_node("process_ticket", self.process_ticket)
+        workflow.add_node("index_codebase", self.index_codebase)
         workflow.add_node("navigate_application", self.navigate_application)
         workflow.add_node("generate_tests", self.generate_tests)
         workflow.add_node("create_pr", self.create_pr)
         workflow.add_node("next_ticket", self.next_ticket)
         
         # Define edges
-        workflow.add_edge("fetch_jira_tickets", "index_codebase")
-        workflow.add_edge("index_codebase", "process_ticket")
+        workflow.add_edge("fetch_jira_tickets", "process_ticket")
         workflow.add_conditional_edges(
             "process_ticket",
             self.decide_next_node_post_process_ticket,
+            {
+                "index_codebase": "index_codebase",
+                "navigate_application": "navigate_application",
+                "generate_tests": "generate_tests",
+                "next_ticket": "next_ticket",
+                END: END
+            }
+        )
+        workflow.add_conditional_edges(
+            "index_codebase",
+            self.decide_next_node_post_index_codebase,
             {
                 "navigate_application": "navigate_application",
                 "generate_tests": "generate_tests",
@@ -97,6 +107,19 @@ class WorkflowOrchestrator:
     def decide_next_node_post_process_ticket(self, state: Dict) -> str:
         """Decide the next node after processing a ticket"""
 
+        if state.get('completed', False):
+            return END
+        
+        if state.get('is_testable', False):
+            # Check if codebase has been indexed yet
+            if not state.get('codebase_indexed', False):
+                return "index_codebase"
+            return "navigate_application" if self.should_navigate_application(state) else "generate_tests"
+        return "next_ticket"
+
+    def decide_next_node_post_index_codebase(self, state: Dict) -> str:
+        """Decide the next node after indexing codebase"""
+        
         if state.get('completed', False):
             return END
         

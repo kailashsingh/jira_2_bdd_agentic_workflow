@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     huggingface_api_key: str
     anthropic_api_key: str
-    model_name: str = "claude-3-7-sonnet-latest"
+    model_name: str = "gpt-4-turbo"
     
     # RAG settings
     vector_db_path: str = "./chroma_db"

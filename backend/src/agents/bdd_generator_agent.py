@@ -1,5 +1,4 @@
 from langchain_openai import ChatOpenAI
-from langchain_ollama import ChatOllama
 from langchain_anthropic import ChatAnthropic
 from langchain.prompts import ChatPromptTemplate
 from typing import Dict, List
@@ -12,16 +11,11 @@ logger = get_logger(__name__)
 
 class BDDGeneratorAgent:
     def __init__(self, rag_tools):
-        logger.info(f'Anthropic Model Used: {settings.model_name}')
-        # self.llm = ChatOpenAI(
-        #     model=settings.model_name,
-        #     temperature=0.2,
-        #     api_key=settings.openai_api_key,
-        # )
-        self.llm = ChatAnthropic(
-            model_name=settings.model_name,
+        logger.info(f'OpenAI Model Used: {settings.model_name}')
+        self.llm = ChatOpenAI(
+            model=settings.model_name,
             temperature=0.2,
-            api_key=settings.anthropic_api_key
+            api_key=settings.openai_api_key,
         )
         
         self.rag_tools = rag_tools
