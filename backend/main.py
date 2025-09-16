@@ -8,7 +8,7 @@ from datetime import datetime
 from src.config.logging import setup_logging, get_logger
 
 # Set up logging with DEBUG level to see all logs
-setup_logging(log_level="DEBUG")
+setup_logging(log_level="INFO")
 logger = get_logger(__name__)
 
 app = FastAPI(title="Jira to BDD Agent API")              

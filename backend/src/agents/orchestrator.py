@@ -96,6 +96,19 @@ class WorkflowOrchestrator:
         
         current_ticket = tickets[current_index]
         logger.info(f'Processing ticket: {current_ticket["key"]}')
+        
+        # Get repository from ticket components
+        repo_name = None
+        if current_ticket.get('components'):
+            repo_name = current_ticket['components'][0]  # Assuming the first component is the repo name
+        
+        if not repo_name:
+            logger.warning(f"No repository found in components for ticket {current_ticket['key']}, using default")
+            repo_name = settings.github_repo
+            
+        # Set the repository in GitHubTools
+        self.github_tools.set_repository(repo_name)
+        logger.info(f'Using repository: {repo_name} for ticket {current_ticket["key"]}')
         is_testable = self.bdd_agent.is_testable(current_ticket)
         logger.info(f'Ticket {current_ticket["key"]} is testable: {is_testable}')
         return {

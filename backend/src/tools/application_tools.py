@@ -6,6 +6,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.prebuilt import create_react_agent
+from langchain_core.tools import tool
 from src.agents.bdd_generator_agent import BDDGeneratorAgent
 from src.config.logging import get_logger
 
@@ -93,6 +94,85 @@ class ApplicationTools:
         logger.info("Browser closed")
     
     async def navigate_and_collect_data_using_mcp(self, jira_data: Dict, bdd_agent: BDDGeneratorAgent) -> str:
+        from pydantic import BaseModel, Field, create_model
+        from typing import Any, Dict as DictType, List as ListType, Optional, Union
+        from langchain_core.tools import StructuredTool
+
+        def convert_json_schema_to_pydantic(schema: DictType[str, Any], model_name: str = "DynamicModel") -> BaseModel:
+            """Convert JSON schema to Pydantic BaseModel"""
+            try:
+                if not isinstance(schema, dict) or schema.get('type') != 'object':
+                    # Create a simple model with no fields for non-object schemas
+                    return create_model(model_name, __base__=BaseModel)
+                
+                properties = schema.get('properties', {})
+                required_fields = set(schema.get('required', []))
+                
+                fields = {}
+                for field_name, field_def in properties.items():
+                    field_type = Any  # Default type
+                    default_value = ...  # Required by default
+                    
+                    # Convert JSON schema types to Python types
+                    if field_def.get('type') == 'string':
+                        field_type = str
+                    elif field_def.get('type') == 'number':
+                        field_type = Union[int, float]
+                    elif field_def.get('type') == 'integer':
+                        field_type = int
+                    elif field_def.get('type') == 'boolean':
+                        field_type = bool
+                    elif field_def.get('type') == 'array':
+                        field_type = ListType[Any]
+                    elif field_def.get('type') == 'object':
+                        field_type = DictType[str, Any]
+                    
+                    # Handle enum fields
+                    if 'enum' in field_def:
+                        # For enum, keep as string but could add validation
+                        field_type = str
+                    
+                    # Set default if not required
+                    if field_name not in required_fields:
+                        default_value = None
+                        field_type = Optional[field_type]
+                    
+                    # Create field with description
+                    field_description = field_def.get('description', '')
+                    fields[field_name] = (field_type, Field(default=default_value, description=field_description))
+                
+                return create_model(model_name, **fields, __base__=BaseModel)
+                
+            except Exception as e:
+                logger.warning(f"Error converting schema to Pydantic for {model_name}: {e}")
+                # Return empty model as fallback
+                return create_model(model_name, __base__=BaseModel)
+
+        def fix_mcp_tool_for_google_ai(tool: StructuredTool) -> StructuredTool:
+            """Fix MCP tool to work with Google Generative AI"""
+            try:
+                if hasattr(tool, 'args_schema') and isinstance(tool.args_schema, dict):
+                    # Convert dict schema to Pydantic model
+                    pydantic_model = convert_json_schema_to_pydantic(
+                        tool.args_schema, 
+                        f"{tool.name.title().replace('_', '')}Args"
+                    )
+                    
+                    # Create new tool with fixed args_schema
+                    return StructuredTool(
+                        name=tool.name,
+                        description=tool.description,
+                        func=tool.func,
+                        coroutine=tool.coroutine,
+                        args_schema=pydantic_model,
+                        metadata=getattr(tool, 'metadata', {}),
+                        response_format=getattr(tool, 'response_format', 'content')
+                    )
+                return tool
+            except Exception as e:
+                logger.warning(f"Error fixing tool {tool.name}: {e}")
+                return tool
+
         # Configure your MCP server (path to your math_server.py)
         server_params = StdioServerParameters(
             command="npx",
@@ -103,10 +183,24 @@ class ApplicationTools:
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
-                tools = await load_mcp_tools(session)
+                # Load the raw MCP tools
+                raw_tools = await load_mcp_tools(session)
+                logger.info(f'Loaded {len(raw_tools)} MCP tools')
+
+                fixed_tools = []
+                for tool in raw_tools:
+                    try:
+                        fixed_tool = fix_mcp_tool_for_google_ai(tool)
+                        fixed_tools.append(fixed_tool)
+                        logger.debug(f"Fixed tool: {tool.name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to fix tool {tool.name}: {e}")
+                        continue
+
+                logger.info(f"Successfully fixed {len(fixed_tools)} tools")
 
                 # llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro")
-                agent = create_react_agent(model=bdd_agent.llm, tools=tools)
+                agent = create_react_agent(model=bdd_agent.llm, tools=fixed_tools)
 
                 text_content = f"Summary:\n{jira_data.get('summary', '')}\n\nDescription:\n{jira_data.get('description', '')}\n\nAcceptance Criteria:\n{jira_data.get('acceptance_criteria', '')}"
                 prompt = f"""

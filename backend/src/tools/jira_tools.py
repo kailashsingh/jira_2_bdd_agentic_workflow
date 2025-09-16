@@ -14,8 +14,10 @@ class JiraTools:
     
     def get_sprint_tickets(self, sprint_id: Optional[int] = None) -> List[Dict]:
         """Fetch all tickets from a sprint or active sprint"""
-        
-        jql = f"sprint = {sprint_id}" if sprint_id else "sprint in openSprints()"
+
+        jql = f"project = \"{settings.jira_project}\" and " if settings.jira_project else ""
+        jql += f"sprint = {sprint_id} " if sprint_id else "sprint in openSprints() "
+        jql += "and status in ('To Do', 'In Progress')"
         logger.debug(f"Using JQL query: {jql}")
         
         issues = self.jira.search_issues(jql, maxResults=100)
@@ -29,7 +31,8 @@ class JiraTools:
                 'description': issue.fields.description or '',
                 'acceptance_criteria': self._extract_acceptance_criteria(issue),
                 'issue_type': issue.fields.issuetype.name,
-                'status': issue.fields.status.name
+                'status': issue.fields.status.name,
+                'components': [comp.name.lower() for comp in issue.fields.components] if hasattr(issue.fields, 'components') else []
             }
             tickets.append(ticket)
             
@@ -45,7 +48,7 @@ class JiraTools:
     def _extract_acceptance_criteria(self, issue):
         """Extract acceptance criteria from custom field or description"""
         # This is a placeholder - adjust based on your Jira configuration
-        criteria = getattr(issue.fields, 'customfield_10001', '') or ''
+        criteria = getattr(issue.fields, 'customfield_10106', '') or ''
         logger.debug(f"Extracted acceptance criteria for {issue.key}")
         return criteria
     

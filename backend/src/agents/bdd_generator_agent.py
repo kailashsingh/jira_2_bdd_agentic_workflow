@@ -1,5 +1,9 @@
 from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
+import openai
+from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
+import backoff
+import time
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import ChatPromptTemplate
 from typing import Dict, List
 
@@ -11,15 +15,61 @@ logger = get_logger(__name__)
 
 class BDDGeneratorAgent:
     def __init__(self, rag_tools):
-        logger.info(f'OpenAI Model Used: {settings.model_name}')
+        logger.info(f'Anthropic Model Used: {settings.model_name}')
         self.llm = ChatOpenAI(
             model=settings.model_name,
             temperature=0.2,
             api_key=settings.openai_api_key,
         )
-        
+
         self.rag_tools = rag_tools
     
+    def custom_backoff():
+        """Custom backoff: 30, 60, 120, 240, 300 seconds"""
+        delays = [30, 60, 120, 240, 300]
+        for delay in delays:
+            yield delay
+
+    @backoff.on_exception(
+        custom_backoff,
+        (openai.RateLimitError, openai.APITimeoutError, openai.InternalServerError,
+         ResourceExhausted, ServiceUnavailable),
+        max_tries=6,
+        max_time=300,  # Maximum 5 minutes
+        jitter=backoff.full_jitter,
+        on_backoff=lambda details: logger.warning(
+            f"Backing off {details['wait']:0.1f} seconds after {details['tries']} tries "
+            f"calling function {details['target'].__name__} with args {str(details['args'])[:100]}..."
+        ),
+        on_giveup=lambda details: logger.error(
+            f"Gave up after {details['tries']} tries calling function {details['target'].__name__}"
+        )
+    )
+    def _invoke_llm_with_backoff(self, messages):
+        """Wrapper method to invoke LLM with backoff retry logic"""
+        try:
+            response = self.llm.invoke(messages)
+            logger.debug("LLM invocation successful")
+            return response
+        except ResourceExhausted as e:
+            logger.warning(f"Google ResourceExhausted error: {e}")
+            # Optionally, if the exception has a 'retry_after' attribute, wait that long
+            retry_delay = getattr(e, "retry_delay", None)
+            if retry_delay:
+                logger.warning(f"Sleeping for retry_delay seconds: {retry_delay}")
+                time.sleep(retry_delay)
+            # re-raise so backoff decorator handles retry
+            raise
+        except ServiceUnavailable as e:
+            logger.warning(f"Google ServiceUnavailable error: {e}")
+            raise
+        except openai.RateLimitError as e:
+            logger.warning(f"Rate limit error: {e}")
+            raise  # Let backoff handle the retry
+        except Exception as e:
+            logger.error(f"Unexpected error in LLM invocation: {e}")
+            raise
+
     def is_testable(self, ticket: Dict) -> bool:
         """Determine if a ticket requires testing"""
         prompt = ChatPromptTemplate.from_template("""
@@ -37,9 +87,8 @@ class BDDGeneratorAgent:
         Answer with only TRUE or FALSE.
         """)
         
-        response = self.llm.invoke(
-            prompt.format_messages(**ticket)
-        )
+        messages = prompt.format_messages(**ticket)
+        response = self._invoke_llm_with_backoff(messages)
         
         return "TRUE" in response.content.upper()
     
@@ -73,12 +122,11 @@ class BDDGeneratorAgent:
             {fileContent}
         """)
 
-        response = self.llm.invoke(
-            prompt.format_messages(
-                filePath = filePath,
-                fileContent = fileContent
-            )
+        messages = prompt.format_messages(
+            filePath=filePath,
+            fileContent=fileContent
         )
+        response = self._invoke_llm_with_backoff(messages)
 
         content = response.content
 
@@ -247,17 +295,17 @@ class BDDGeneratorAgent:
         Application Data Collected:                                          
         {app_context}                                          
         """)
-        
-        logger.debug(f"Formatted prompt for BDD generation: {prompt.format_messages(**ticket, code_context=code_context, app_context=application_data)}")
 
-        response = self.llm.invoke(
-            prompt.format_messages(
-                **ticket,
-                code_context=code_context,
-                app_context=application_data
-            )
+        message = prompt.format_messages(
+            **ticket,
+            code_context=code_context,
+            app_context=application_data if application_data else "No application data provided."
         )
-        
+
+        logger.debug(f"Formatted prompt for BDD generation: {message}")
+
+        response = self._invoke_llm_with_backoff(message)
+
         logger.info(f'BDD Generation LLM Response: {response.content[:10]}...')
 
         # Parse the response
