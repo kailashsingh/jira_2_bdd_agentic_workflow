@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Cache settings
     cache_enabled: bool = True
     cache_ttl: int = 3600  # Cache time-to-live in seconds
+    
+    # Workflow settings
+    allowed_ticket_statuses: List[str] = ['To Do', 'In Progress']
     
     model_config = SettingsConfigDict(env_file=".env")
 
