@@ -31,10 +31,15 @@ import { MatDividerModule } from '@angular/material/divider';
  
           <mat-divider></mat-divider>
           <div class="flex items-center justify-between">
-            <span title="Insert JIRA ID and generate feature files on demand">JIRA ID:</span>
+            <div class="flex items-center gap-1">
+              <label class="text-sm font-medium">JIRA ID</label>
+            </div>
             <input type="text" class="border rounded px-2 py-1 w-32" placeholder="Enter JIRA ID">
           </div>
-          <button mat-stroked-button class="w-full">
+          
+          <div style="height: 150px; background-color: transparent;"></div>
+          
+          <button mat-stroked-button class="w-full" style="margin-top: 26px;">
             <span>Generate Feature File</span>
           </button>
           
