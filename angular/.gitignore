@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# misc
+.DS_Store
+Thumbs.db
+
+# Angular
+dist/
+tmp/
+out-tsc/
+.angular/
+*.tgz
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Build outputs
+build/
+coverage/
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Logs
+logs
+*.log
+
+# Testing
+coverage/
+*.lcov
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
