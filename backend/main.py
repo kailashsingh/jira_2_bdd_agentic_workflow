@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 import uvicorn
@@ -11,7 +12,16 @@ from src.config.logging import setup_logging, get_logger
 setup_logging(log_level="DEBUG")
 logger = get_logger(__name__)
 
-app = FastAPI(title="Jira to BDD Agent API")              
+app = FastAPI(title="Jira to BDD Agent API")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:4200"],  # Angular dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)              
 
 class WorkflowRequest(BaseModel):
     sprint_id: Optional[int] = None

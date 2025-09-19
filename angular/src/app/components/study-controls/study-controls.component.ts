@@ -1,10 +1,14 @@
-import { Component } from '@angular/core';
+import { Component, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
+import { WorkflowService, WorkflowRequest } from '../../services/workflow.service';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-study-controls',
@@ -15,7 +19,9 @@ import { MatIconModule } from '@angular/material/icon';
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
-    MatIconModule
+    MatIconModule,
+    MatProgressSpinnerModule,
+    MatSnackBarModule
   ],
   template: `
     <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
@@ -26,8 +32,8 @@ import { MatIconModule } from '@angular/material/icon';
         </mat-form-field>
         
         <mat-form-field class="w-130" appearance="outline">
-          <mat-select placeholder="Filter">
-            <mat-icon matPrefix>filter_list</mat-icon>
+          <mat-label>Filter</mat-label>
+          <mat-select>
             <mat-option value="all">All Studies</mat-option>
             <mat-option value="role-a">Role A Only</mat-option>
             <mat-option value="role-b">Role B Only</mat-option>
@@ -43,7 +49,12 @@ import { MatIconModule } from '@angular/material/icon';
           <mat-icon>refresh</mat-icon>
           Refresh
         </button>
-        <button mat-flat-button color="primary">
+        <button mat-flat-button color="primary" (click)="generateFeatureFile()" [disabled]="isGenerating">
+          <mat-icon *ngIf="!isGenerating">auto_fix_high</mat-icon>
+          <mat-spinner *ngIf="isGenerating" diameter="20"></mat-spinner>
+          {{ isGenerating ? 'Generating...' : 'Generate Feature File' }}
+        </button>
+        <button mat-flat-button color="accent">
           <mat-icon>add</mat-icon>
           New Study
         </button>
@@ -69,4 +80,107 @@ import { MatIconModule } from '@angular/material/icon';
     }
   `]
 })
-export class StudyControlsComponent {}
+export class StudyControlsComponent implements OnDestroy {
+  isGenerating = false;
+  currentRunId: string | null = null;
+  private pollInterval: any;
+  private subscriptions: Subscription[] = [];
+
+  constructor(
+    private workflowService: WorkflowService,
+    private snackBar: MatSnackBar
+  ) {}
+
+  ngOnDestroy(): void {
+    // Clean up polling interval
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+    
+    // Unsubscribe from all subscriptions
+    this.subscriptions.forEach(sub => sub.unsubscribe());
+  }
+
+  generateFeatureFile(): void {
+    if (this.isGenerating) {
+      return;
+    }
+
+    this.isGenerating = true;
+    
+    // You can customize this request based on your needs
+    const request: WorkflowRequest = {
+      sprint_id: undefined, // You can add a form field to capture this
+      jira_keys: undefined  // You can add a form field to capture this
+    };
+
+    const subscription = this.workflowService.triggerWorkflow(request).subscribe({
+      next: (response) => {
+        this.currentRunId = response.run_id;
+        this.snackBar.open(
+          `Workflow started successfully! Run ID: ${response.run_id}`, 
+          'Close', 
+          { duration: 5000 }
+        );
+        
+        // Start polling for status updates
+        this.pollWorkflowStatus();
+      },
+      error: (error) => {
+        console.error('Error triggering workflow:', error);
+        this.snackBar.open(
+          'Error starting workflow. Please check the backend connection.', 
+          'Close', 
+          { duration: 5000 }
+        );
+        this.isGenerating = false;
+      }
+    });
+    
+    this.subscriptions.push(subscription);
+  }
+
+  private pollWorkflowStatus(): void {
+    if (!this.currentRunId) {
+      this.isGenerating = false;
+      return;
+    }
+
+    // Clear any existing polling interval
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+
+    this.pollInterval = setInterval(() => {
+      const subscription = this.workflowService.getWorkflowStatus(this.currentRunId!).subscribe({
+        next: (status) => {
+          if (status.status === 'completed' || status.status === 'failed') {
+            clearInterval(this.pollInterval);
+            this.isGenerating = false;
+            
+            if (status.status === 'completed') {
+              this.snackBar.open(
+                'Feature file generation completed successfully!', 
+                'Close', 
+                { duration: 5000 }
+              );
+            } else {
+              this.snackBar.open(
+                `Workflow failed: ${status.error || 'Unknown error'}`, 
+                'Close', 
+                { duration: 5000 }
+              );
+            }
+          }
+        },
+        error: (error) => {
+          console.error('Error checking workflow status:', error);
+          clearInterval(this.pollInterval);
+          this.isGenerating = false;
+        }
+      });
+      
+      this.subscriptions.push(subscription);
+    }, 2000); // Poll every 2 seconds
+  }
+}

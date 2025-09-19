@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Backend Connection</title>
+</head>
+<body>
+    <h1>Backend Connection Test</h1>
+    <button onclick="testConnection()">Test Backend Connection</button>
+    <div id="result"></div>
+
+    <script>
+        async function testConnection() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                // Test health endpoint
+                const healthResponse = await fetch('http://localhost:8000/health');
+                const healthData = await healthResponse.json();
+                
+                // Test workflow trigger
+                const workflowResponse = await fetch('http://localhost:8000/workflow/trigger', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({})
+                });
+                const workflowData = await workflowResponse.json();
+                
+                resultDiv.innerHTML = `
+                    <h3>✅ Backend is running!</h3>
+                    <p><strong>Health Check:</strong> ${JSON.stringify(healthData)}</p>
+                    <p><strong>Workflow Trigger:</strong> ${JSON.stringify(workflowData)}</p>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <h3>❌ Backend connection failed!</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                    <p>Make sure the backend is running on port 8000</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
