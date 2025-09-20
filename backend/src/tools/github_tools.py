@@ -4,20 +4,59 @@ from typing import List, Optional, Dict
 import base64
 from src.config.settings import settings
 from src.config.logging import get_logger
+from functools import lru_cache
+import time
+from github.Repository import Repository
 
 logger = get_logger(__name__)
 
 class GitHubTools:
     def __init__(self):
         self.github = Github(settings.github_token)
-        self.repo = self.github.get_repo(settings.github_repo)
+        self._repos_cache = {}
+        self._cache_timestamps = {}
+        self.current_repo_name = None
+        self.cache_ttl = settings.cache_ttl
+
+    def set_repository(self, repo_name: str) -> None:
+        """Set the current repository based on repo name"""
+        if self.current_repo_name != repo_name:
+            logger.info(f"Switching to repository: {repo_name}")
+            self.current_repo_name = settings.github_repo_owner + "/" + repo_name
+
+    def _get_repo(self) -> Repository:
+        """Get the current repository with caching"""
+        if not self.current_repo_name:
+            raise ValueError("Repository name not set. Call set_repository() first.")
+
+        current_time = time.time()
+        
+        # Check if cache is enabled and if we have a cached repo
+        if settings.cache_enabled and self.current_repo_name in self._repos_cache:
+            cache_time = self._cache_timestamps.get(self.current_repo_name, 0)
+            
+            # Check if cache is still valid
+            if current_time - cache_time < self.cache_ttl:
+                logger.debug(f"Using cached repository: {self.current_repo_name}")
+                return self._repos_cache[self.current_repo_name]
+        
+        # Cache miss or disabled - fetch from GitHub
+        logger.info(f"Fetching repository from GitHub: {self.current_repo_name}")
+        repo = self.github.get_repo(self.current_repo_name)
+        
+        # Update cache if enabled
+        if settings.cache_enabled:
+            self._repos_cache[self.current_repo_name] = repo
+            self._cache_timestamps[self.current_repo_name] = current_time
+        
+        return repo
     
     def get_feature_files(self) -> List[Dict]:
         """Fetch all feature files from the repository"""
 
-        logger.info(f"Fetching feature files from {settings.github_repo}")
+        logger.info(f"Fetching feature files from {self.current_repo_name}")
         features = []
-        contents = self.repo.get_contents("src/features")
+        contents = self._get_repo().get_contents("src/features")
         
         for content_file in contents:
             if content_file.path.endswith('.feature'):
@@ -34,9 +73,9 @@ class GitHubTools:
     def get_step_definitions(self) -> List[Dict]:
         """Fetch all step definition files"""
 
-        logger.info(f"Fetching step definitions from {settings.github_repo}")
+        logger.info(f"Fetching step definitions from {self.current_repo_name}")
         step_defs = []
-        contents = self.repo.get_contents("src/step-definitions")
+        contents = self._get_repo().get_contents("src/step-definitions")
         
         for content_file in contents:
             if content_file.path.endswith('.ts'):
@@ -58,13 +97,14 @@ class GitHubTools:
             force_update: If True and branch exists, update it to latest default branch commit.
                          If False and branch exists, return existing branch without changes.
         """
-        default_branch_name = self.repo.default_branch
-        base_branch = self.repo.get_branch(default_branch_name)
+        repo = self._get_repo()
+        default_branch_name = repo.default_branch
+        base_branch = repo.get_branch(default_branch_name)
         ref = f"refs/heads/{branch_name}"
 
         # Check if branch already exists
         try:
-            existing_ref = self.repo.get_git_ref(f"heads/{branch_name}")
+            existing_ref = self._get_repo().get_git_ref(f"heads/{branch_name}")
             if force_update:
                 try:
                     # Try to update the existing branch to point to the latest default branch commit
@@ -90,14 +130,14 @@ class GitHubTools:
 
         # Branch doesn't exist, create it
         try:
-            self.repo.create_git_ref(ref=ref, sha=base_branch.commit.sha)
+            self._get_repo().create_git_ref(ref=ref, sha=base_branch.commit.sha)
             logger.info(f"Created branch '{branch_name}' from '{default_branch_name}'")
             return branch_name
         except GithubException as e:
             # 422 often indicates the ref exists or update failed due to race; re-check and return if present
             if e.status == 422:
                 try:
-                    self.repo.get_git_ref(f"heads/{branch_name}")
+                    self._get_repo().get_git_ref(f"heads/{branch_name}")
                     logger.info(f"Branch appeared concurrently: {branch_name}")
                     return branch_name
                 except GithubException:
@@ -110,19 +150,20 @@ class GitHubTools:
         """Create or update a file in the repository"""
         try:
             # Try to get existing file
-            file = self.repo.get_contents(file_path, ref=branch)
-            self.repo.update_file(
+            repo = self._get_repo()
+            file = repo.get_contents(file_path, ref=branch)
+            repo.update_file(
                 file_path, message, content, file.sha, branch=branch
             )
         except:
             # File doesn't exist, create it
-            self.repo.create_file(
+            self._get_repo().create_file(
                 file_path, message, content, branch=branch
             )
     
     def create_pull_request(self, branch: str, title: str, body: str):
         """Create a pull request"""
-        pr = self.repo.create_pull(
+        pr = self._get_repo().create_pull(
             title=title,
             body=body,
             head=branch,

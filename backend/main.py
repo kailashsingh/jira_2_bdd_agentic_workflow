@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Union
 import uvicorn
 from src.agents.orchestrator import WorkflowOrchestrator
 import asyncio
@@ -9,7 +9,7 @@ from datetime import datetime
 from src.config.logging import setup_logging, get_logger
 
 # Set up logging with DEBUG level to see all logs
-setup_logging(log_level="DEBUG")
+setup_logging(log_level="INFO")
 logger = get_logger(__name__)
 
 app = FastAPI(title="Jira to BDD Agent API")
@@ -26,6 +26,10 @@ app.add_middleware(
 class WorkflowRequest(BaseModel):
     sprint_id: Optional[int] = None
     jira_keys: Optional[List[str]] = None
+
+class TicketRequest(BaseModel):
+    ticket_keys: Union[str, List[str]]  # Can be single string or list of strings
+    project: Optional[str] = None
 
 class WorkflowResponse(BaseModel):
     status: str
@@ -55,6 +59,34 @@ class UrlValidationResponse(BaseModel):
 # Store for workflow runs (in production, use a database)
 workflow_runs = {}
 
+@app.post("/workflow/trigger/tickets", response_model=WorkflowResponse)
+async def trigger_tickets_workflow(request: TicketRequest):
+    """Trigger the BDD generation workflow for one or more tickets"""
+    # Convert single ticket to list for unified processing
+    ticket_keys = [request.ticket_keys] if isinstance(request.ticket_keys, str) else request.ticket_keys
+    
+    logger.info(f"Received workflow trigger request for tickets: {ticket_keys}")
+    run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    
+    # Start workflow in background
+    logger.info(f"Starting tickets workflow {run_id} in background")
+    asyncio.create_task(run_tickets_workflow_async(run_id, ticket_keys, request.project))
+    
+    workflow_runs[run_id] = {
+        'status': 'running',
+        'started_at': datetime.now().isoformat(),
+        'ticket_keys': ticket_keys,
+        'project': request.project
+    }
+    logger.info(f"Created workflow run entry for {run_id}")
+    
+    return WorkflowResponse(
+        status="running",
+        run_id=run_id,
+        started_at=workflow_runs[run_id]['started_at'],
+        message=f"Workflow triggered successfully for tickets: {ticket_keys}"
+    )
+
 @app.post("/workflow/trigger", response_model=WorkflowResponse)
 async def trigger_workflow(request: WorkflowRequest):
     """Trigger the BDD generation workflow"""
@@ -78,6 +110,38 @@ async def trigger_workflow(request: WorkflowRequest):
         started_at=workflow_runs[run_id]['started_at'],
         message="Workflow triggered successfully"
     )
+
+async def run_tickets_workflow_async(run_id: str, ticket_keys: List[str], project: Optional[str] = None):
+    """Run the workflow for one or more tickets asynchronously"""
+    logger.info(f"Starting workflow execution for run_id={run_id}, tickets={ticket_keys}")
+    
+    try:
+        logger.debug("Initializing WorkflowOrchestrator")
+        orchestrator = WorkflowOrchestrator()
+        
+        logger.info(f"Processing tickets in batch: {ticket_keys}")
+        result = await orchestrator.process_tickets(ticket_keys, project)
+        
+        # Update workflow status based on result
+        if result['status'] == 'error':
+            logger.error(f"Workflow failed: {result['message']}")
+            workflow_runs[run_id].update({
+                'status': 'failed',
+                'error': result['message'],
+                'completed_at': datetime.now().isoformat()
+            })
+        else:
+            # Workflow completed successfully
+            workflow_runs[run_id].update({
+                'status': 'completed',
+                'completed_at': datetime.now().isoformat(),
+                'result': result.get('result', {})
+            })
+        
+    except Exception as e:
+        logger.error(f"Workflow {run_id} failed with error: {str(e)}", exc_info=True)
+        workflow_runs[run_id]['status'] = 'failed'
+        workflow_runs[run_id]['error'] = str(e)
 
 async def run_workflow_async(run_id: str, sprint_id: Optional[int]):
     """Run the workflow asynchronously"""

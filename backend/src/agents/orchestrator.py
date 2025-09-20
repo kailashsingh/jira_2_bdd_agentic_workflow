@@ -1,5 +1,5 @@
 from langgraph.graph import Graph, END
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, List
 import asyncio
 from src.tools.jira_tools import JiraTools
 from src.tools.github_tools import GitHubTools
@@ -27,19 +27,29 @@ class WorkflowOrchestrator:
         
         # Define nodes
         workflow.add_node("fetch_jira_tickets", self.fetch_jira_tickets)
-        workflow.add_node("index_codebase", self.index_codebase)
         workflow.add_node("process_ticket", self.process_ticket)
+        workflow.add_node("index_codebase", self.index_codebase)
         workflow.add_node("navigate_application", self.navigate_application)
         workflow.add_node("generate_tests", self.generate_tests)
         workflow.add_node("create_pr", self.create_pr)
         workflow.add_node("next_ticket", self.next_ticket)
         
         # Define edges
-        workflow.add_edge("fetch_jira_tickets", "index_codebase")
-        workflow.add_edge("index_codebase", "process_ticket")
+        workflow.add_edge("fetch_jira_tickets", "process_ticket")
         workflow.add_conditional_edges(
             "process_ticket",
             self.decide_next_node_post_process_ticket,
+            {
+                "index_codebase": "index_codebase",
+                "navigate_application": "navigate_application",
+                "generate_tests": "generate_tests",
+                "next_ticket": "next_ticket",
+                END: END
+            }
+        )
+        workflow.add_conditional_edges(
+            "index_codebase",
+            self.decide_next_node_post_index_codebase,
             {
                 "navigate_application": "navigate_application",
                 "generate_tests": "generate_tests",
@@ -59,11 +69,25 @@ class WorkflowOrchestrator:
     
     def fetch_jira_tickets(self, state: Dict) -> Dict:
         """Fetch tickets from Jira"""
-        sprint_id = state.get('sprint_id')
 
-        logger.info(f"Fetching tickets for sprint_id: {sprint_id if sprint_id else 'active sprint'}")
+        if state.get('ticket_keys'):
+            # Specific tickets mode
+            try:
+                logger.info(f"Fetching specified tickets: {state['ticket_keys']}")
+                tickets = self.jira_tools.get_tickets(state['ticket_keys'], state.get('project'))
+            except ValueError as e:
+                # Pass the error up with the state
+                return {
+                    **state,
+                    'error': str(e),
+                    'completed': True  # Mark as completed since we can't process invalid tickets
+                }
+        else:
+            # Sprint mode
+            sprint_id = state.get('sprint_id')
+            logger.info(f"Fetching tickets for sprint_id: {sprint_id if sprint_id else 'active sprint'}")
+            tickets = self.jira_tools.get_sprint_tickets(sprint_id)
 
-        tickets = self.jira_tools.get_sprint_tickets(sprint_id)
         return {**state, 'tickets': tickets, 'current_ticket_index': 0}
     
     def index_codebase(self, state: Dict) -> Dict:
@@ -86,6 +110,19 @@ class WorkflowOrchestrator:
         
         current_ticket = tickets[current_index]
         logger.info(f'Processing ticket: {current_ticket["key"]}')
+        
+        # Get repository from ticket components
+        repo_name = None
+        if current_ticket.get('components'):
+            repo_name = current_ticket['components'][0]  # Assuming the first component is the repo name
+        
+        if not repo_name:
+            logger.warning(f"No repository found in components for ticket {current_ticket['key']}, using default")
+            repo_name = settings.github_repo
+            
+        # Set the repository in GitHubTools
+        self.github_tools.set_repository(repo_name)
+        logger.info(f'Using repository: {repo_name} for ticket {current_ticket["key"]}')
         is_testable = self.bdd_agent.is_testable(current_ticket)
         logger.info(f'Ticket {current_ticket["key"]} is testable: {is_testable}')
         return {
@@ -97,6 +134,19 @@ class WorkflowOrchestrator:
     def decide_next_node_post_process_ticket(self, state: Dict) -> str:
         """Decide the next node after processing a ticket"""
 
+        if state.get('completed', False):
+            return END
+        
+        if state.get('is_testable', False):
+            # Check if codebase has been indexed yet
+            if not state.get('codebase_indexed', False):
+                return "index_codebase"
+            return "navigate_application" if self.should_navigate_application(state) else "generate_tests"
+        return "next_ticket"
+
+    def decide_next_node_post_index_codebase(self, state: Dict) -> str:
+        """Decide the next node after indexing codebase"""
+        
         if state.get('completed', False):
             return END
         
@@ -206,9 +256,55 @@ class WorkflowOrchestrator:
             'current_ticket_index': state['current_ticket_index'] + 1
         }
     
+    async def process_tickets(self, ticket_keys: List[str], project: Optional[str] = None) -> Dict:
+        """Process one or more tickets"""
+            
+        logger.info(f"Processing tickets: {ticket_keys}")
+        
+        try:
+            # Create initial state with ticket keys
+            initial_state = {
+                'ticket_keys': ticket_keys,
+                'project': project,
+            }
+            
+            # Run the workflow
+            result = await self.workflow.ainvoke(initial_state, config={"recurssionLimit": 10})
+            logger.debug(f"Workflow result: {result}")
+            
+            if result.get('completed', False):
+                return {
+                    'status': 'completed',
+                    'message': f"Successfully processed {len(ticket_keys)} tickets",
+                    'result': result
+                }
+            else:
+                return {
+                    'status': 'error',
+                    'message': "Workflow did not complete successfully",
+                    'result': result
+                }
+            
+        except ValueError as e:
+            error_message = str(e)
+            logger.warning(f"Cannot process tickets {ticket_keys}: {error_message}")
+            return {
+                'status': 'error',
+                'message': error_message,
+                'result': None
+            }
+        except Exception as e:
+            error_message = f"Unexpected error processing tickets {ticket_keys}: {str(e)}"
+            logger.error(error_message, exc_info=True)
+            return {
+                'status': 'error',
+                'message': error_message,
+                'result': None
+            }
+        
     async def run(self, sprint_id: Optional[int] = None) -> Dict:
-        """Execute the workflow"""
+        """Execute the workflow in sprint mode"""
         initial_state = {'sprint_id': sprint_id}
         result = await self.workflow.ainvoke(initial_state, config={"recurssionLimit": 10})
-        logger.debug(f"Workflow run result: {result}")
+        logger.debug(f"Sprint workflow result: {result}")
         return result
