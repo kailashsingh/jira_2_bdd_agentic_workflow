@@ -26,10 +26,8 @@ This is an Angular conversion of the React BDD (Behavior-Driven Development) Age
 src/
 ├── app/
 │   ├── components/
-│   │   ├── study-header/          # Application header with title and controls
-│   │   ├── study-controls/        # Search and filter controls
-│   │   ├── study-table/           # Data table for study entries
-│   │   └── validation-panel/      # Validation status and quick actions
+│   │   ├── job-status-panel/      # Combined job status panel with grid
+│   │   └── feature-generation-job/ # Feature generation job panel
 │   └── app.component.ts           # Root component
 ├── styles.scss                    # Global styles and CSS variables
 ├── main.ts                        # Application bootstrap
@@ -92,21 +90,20 @@ ng build --configuration production
 
 ## Components Overview
 
-### StudyHeaderComponent
-Displays the application title "BDD Agentic Workflow" with description and settings controls. Features a role protocol badge and clean, professional header design.
+### JobStatusPanelComponent
+Combined job status panel featuring:
+- **Header Section**: Application title and settings controls
+- **Search & Filter**: Search by run ID, message, or PRs with status filtering
+- **Job Status Grid**: Comprehensive table with columns for:
+  - Run ID: Unique job identifier
+  - Started At: Job initiation timestamp
+  - Status: Visual status indicators (running, completed, failed, pending)
+  - Pull Requests: PR chips for each job
+  - Message: Job status messages and error details
+  - Action: Retrigger button for individual jobs
+- **Real-time Updates**: Loading states and status indicators
 
-### StudyControlsComponent
-Provides comprehensive search functionality and filtering options for study entries. Includes search input with icon, filter dropdown, refresh button, and "New Study" action button.
-
-### StudyTableComponent
-Displays study data in a responsive Material table with:
-- Batch information with chip indicators
-- Date and time columns
-- Status indicators with color-coded icons (validated, pending, error)
-- PR (Pull Request) information
-- Action buttons for navigation
-
-### ValidationPanelComponent
+### FeatureGenerationJobComponent
 Two-panel layout featuring:
 
 #### On-Demand Validation Panel

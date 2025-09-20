@@ -24,17 +24,11 @@ bdd-agentic-workflow-angular/
 │       ├── app.component.ts           # Root application component
 │       │
 │       └── components/
-│           ├── study-header/
-│           │   └── study-header.component.ts      # Header with title and controls
+│           ├── job-status-panel/
+│           │   └── job-status-panel.component.ts  # Combined job status panel with grid
 │           │
-│           ├── study-controls/
-│           │   └── study-controls.component.ts    # Search and filter controls
-│           │
-│           ├── study-table/
-│           │   └── study-table.component.ts       # Data table with study entries
-│           │
-│           └── validation-panel/
-│               └── validation-panel.component.ts  # Status panel and quick actions
+│           └── feature-generation-job/
+│               └── feature-generation-job.component.ts  # Feature generation job panel and quick actions
 
 QUICK START GUIDE:
 ==================
@@ -64,9 +58,9 @@ FEATURES:
 ✓ Fully responsive design
 ✓ TypeScript support
 ✓ SCSS styling with design system
-✓ Study management interface
-✓ Validation status dashboard
-✓ Interactive data table
+✓ Job status management interface
+✓ Real-time status tracking
+✓ Interactive job grid
 ✓ Search and filter functionality
 
 CONVERSION NOTES:
