@@ -1,0 +1,353 @@
+# JIRA to BDD Agentic Workflow - Enhanced .gitignore
+
+# ==========================================
+# Dependencies
+# ==========================================
+node_modules/
+npm-debug.log*
+yarn-error.log
+yarn-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ==========================================
+# IDEs and editors
+# ==========================================
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyCharm
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# ==========================================
+# System Files
+# ==========================================
+.DS_Store
+Thumbs.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# ==========================================
+# Angular Frontend
+# ==========================================
+angular/
+dist/
+tmp/
+out-tsc/
+.angular/
+.angular/cache/
+.angular/workspace/
+*.tgz
+bazel-out/
+
+# ==========================================
+# Build outputs & Coverage
+# ==========================================
+build/
+coverage/
+htmlcov/
+*.lcov
+.nyc_output
+
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
+.env
+.env.local
+.env.production
+.env.development.local
+.env.test.local
+.env.production.local
+
+# API Keys and secrets
+**/secrets/
+**/*secret*
+**/*credential*
+**/*key*
+config/secrets.yaml
+config/credentials.json
+jira_token.txt
+github_token.txt
+api_keys.json
+
+# ==========================================
+# Logs
+# ==========================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+application.log
+error.log
+debug.log
+
+# Backend logs
+backend/logs/
+frontend/logs/
+test-automation/logs/
+
+# ==========================================
+# Python
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# ==========================================
+# Virtual environments
+# ==========================================
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.conda/
+
+# ==========================================
+# Backend specific
+# ==========================================
+backend/.venv/
+backend/.env
+backend/__pycache__/
+backend/*.log
+backend/uploads/
+backend/temp/
+backend/database.db
+backend/instance/
+
+# ==========================================
+# AI/ML Models & Data (CRITICAL FOR THIS PROJECT)
+# ==========================================
+# Hugging Face model cache
+.cache/huggingface/
+.cache/torch/
+models/
+model_cache/
+*.model
+*.bin
+*.safetensors
+*.onnx
+*.h5
+*.pkl
+*.joblib
+*.pt
+*.pth
+
+# Model artifacts
+model_artifacts/
+checkpoints/
+trained_models/
+
+# Dataset files
+datasets/
+data/
+*.parquet
+*.arrow
+
+# ChromaDB and vector databases
+chroma_db/
+vector_db/
+embeddings_cache/
+
+# LangChain cache
+.langchain/
+
+# ==========================================
+# Test Automation (IMPORTANT FOR THIS PROJECT)
+# ==========================================
+# Test automation reports and artifacts
+test-automation/reports/
+test-automation/coverage/
+test-automation/.pytest_cache/
+test-automation/benchmark_results/
+test-automation/validation_reports/
+test-automation/__pycache__/
+test-automation/*.log
+test-automation/temp/
+
+# Pytest artifacts
+pytest_report.html
+junit.xml
+
+# Test outputs
+test_results/
+test_outputs/
+screenshots/
+videos/
+
+# Performance test results
+*.jmx
+*.jtl
+performance_results/
+
+# ==========================================
+# JIRA to BDD Project Specific
+# ==========================================
+# JIRA data exports
+jira_exports/
+tickets_backup/
+
+# Generated BDD files (if temporary)
+generated_features/
+temp_bdd/
+
+# Workflow execution logs
+workflow_logs/
+execution_traces/
+
+# Agent state files
+agent_state/
+conversation_history/
+
+# Application screenshots and recordings
+app_screenshots/
+recordings/
+traces/
+
+# Performance monitoring
+monitoring/
+metrics/
+
+# ==========================================
+# Database & Storage
+# ==========================================
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Database dumps
+*.sql
+*.dump
+
+# Redis
+dump.rdb
+
+# ==========================================
+# Docker & Containers
+# ==========================================
+.dockerignore
+docker-compose.override.yml
+.docker/
+*.container.log
+
+# ==========================================
+# Cloud & Deployment
+# ==========================================
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# AWS
+.aws/
+
+# Google Cloud
+gcloud-service-key.json
+
+# Kubernetes
+*.kubeconfig
+
+# ==========================================
+# Miscellaneous
+# ==========================================
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Configuration files with sensitive data
+config.ini
+settings.local.json
+local_settings.py
+
+# Memory dumps
+*.dmp
+*.mem
+
+# Benchmark and profiling
+*.prof
+*.pprof
+
+# Local development files
+local/
+dev/
+sandbox/
+playground/
+
+# ==========================================
+# Keep Important Files (Override ignores)
+# ==========================================
+# Keep these important project files
+!frontend/package.json
+!frontend/package-lock.json
+!backend/requirements.txt
+!test-automation/requirements.txt
+!.gitignore
+!README.md
+!**/README.md

@@ -1,0 +1,130 @@
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=src",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-report=html:reports/coverage",
+    "--cov-report=xml:reports/coverage.xml",
+    "--html=reports/pytest_report.html",
+    "--self-contained-html",
+    "--junitxml=reports/junit.xml",
+    "--tb=short",
+    "--timeout=300"
+]
+testpaths = [
+    "tests"
+]
+pythonpath = [
+    "src",
+    "../backend/src"
+]
+python_files = [
+    "test_*.py",
+    "*_test.py"
+]
+python_classes = [
+    "Test*"
+]
+python_functions = [
+    "test_*"
+]
+markers = [
+    # Test execution speed
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "fast: marks tests as fast execution",
+    
+    # Test categories
+    "unit: marks tests as unit tests (fast, isolated)",
+    "integration: marks tests as integration tests (multiple components)",
+    "e2e: marks tests as end-to-end tests (full system)",
+    
+    # Core functionality - BDD validation focused
+    "bdd: marks tests related to BDD scenario creation and validation",
+    "validation: marks tests for BDD validation against backend results",
+    "models: marks tests for essential models (CodeBERT, Sentence-Transformer)",
+    "workflow: marks tests related to workflow orchestration",
+    "tools: marks tests for tool integration",
+    
+    # Test types
+    "smoke: marks tests as smoke tests (critical functionality)",
+    "regression: marks tests as regression tests (stability)",
+    "performance: marks tests for performance benchmarking",
+    "security: marks tests for security validation",
+    
+    # Infrastructure
+    "async: marks tests with asynchronous operations",
+    "mock: marks tests using mocks and stubs",
+    "external: marks tests requiring external services",
+    
+    # BDD validation specifics
+    "requirement_coverage: marks tests for requirement coverage validation",
+    "scenario_completeness: marks tests for BDD scenario completeness",
+    "step_accuracy: marks tests for step definition accuracy", 
+    "backend_alignment: marks tests for backend result alignment",
+    
+    # Priority levels
+    "critical: marks critical functionality that must work",
+    "high: marks high priority features",
+    "medium: marks medium priority features",
+    "low: marks nice-to-have features"
+]
+asyncio_mode = "auto"
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning"
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/conftest.py",
+    "*/__init__.py",
+    "*/migrations/*",
+    "*/venv/*",
+    "*/.venv/*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod"
+]
+
+[tool.coverage.html]
+directory = "reports/coverage"
+
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jira-bdd-test-automation"
+version = "1.0.0"
+description = "Test automation framework for JIRA to BDD workflow"
+authors = [
+    {name = "Test Automation Team", email = "team@company.com"}
+]
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11"
+]

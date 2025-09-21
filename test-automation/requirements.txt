@@ -1,0 +1,44 @@
+# Testing framework (core BDD testing)
+pytest==7.4.3
+pytest-bdd==7.0.1
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
+pytest-html==4.1.1
+pytest-cov==4.1.0
+pytest-timeout==2.2.0
+
+# Backend Framework Testing (for BDD validation against backend)
+fastapi==0.116.1
+uvicorn==0.25.0
+httpx==0.25.2
+
+# AI and LangChain (essential for BDD generation)
+langchain==0.3.5
+langchain-core==0.3.36
+openai==1.99.9
+
+# External Service Integration (essential for BDD validation)
+jira==3.10.5
+PyGithub==2.1.1
+
+# Hugging Face models and transformers (essential for BDD generation and validation)
+transformers==4.48.3
+torch==2.3.1
+sentence-transformers==2.4.0
+evaluate==0.4.1
+
+# Testing specific libraries (for BDD test generation and validation)
+# Mock libraries
+responses==0.18.0
+faker==20.1.0
+factory-boy==3.3.1
+
+# Utilities (essential configuration and data handling)
+pydantic==2.7.4
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# Performance monitoring (for BDD generation performance validation)
+memory-profiler==0.61.0
+psutil==5.9.6
+pytest-benchmark==4.0.0
