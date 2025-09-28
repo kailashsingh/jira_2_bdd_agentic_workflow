@@ -22,3 +22,5 @@ backend/.venv/
 backend/.env
 backend/nltk_data/corpora/stopwords/
 backend/nltk_data/tokenizers/punkt/
+backend/nltk-data-download.py
+backend/nltk_data/tokenizers/punkt_tab/
