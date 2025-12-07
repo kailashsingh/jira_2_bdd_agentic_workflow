@@ -1,9 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Any
 import uvicorn
 from src.agents.orchestrator import WorkflowOrchestrator
+from src.agents.orchestrator_v2 import ExecutorCriticOrchestrator
 import asyncio
 from datetime import datetime
 from src.config.logging import setup_logging, get_logger
@@ -55,6 +56,39 @@ class UrlValidationResponse(BaseModel):
     status_code: Optional[int] = None
     elements_count: Optional[int] = None
     forms_count: Optional[int] = None
+
+class ExistingCodeItem(BaseModel):
+    metadata: Dict[str, Any]  # Should contain 'path' at minimum
+    content: str
+
+class TicketDetails(BaseModel):
+    key: str
+    summary: str
+    description: str
+    acceptance_criteria: str
+
+class BDDTestRequest(BaseModel):
+    ticket_details: TicketDetails
+    existing_code: List[ExistingCodeItem]
+    application_data: Optional[Dict[str, Any]] = None
+
+class BDDTestResponse(BaseModel):
+    update_feature_file: bool
+    feature_file_name: Optional[str] = None
+    feature: str
+    update_steps_file: bool
+    steps_file_name: Optional[str] = None
+    step_definitions: str
+    ticket_key: str
+
+class ExecutorCriticWorkflowRequest(BaseModel):
+    ticket_details: TicketDetails
+    existing_code: List[ExistingCodeItem]
+    application_data: Optional[str] = None
+
+class ExecutorCriticWorkflowResponse(BaseModel):
+    status: str
+    result: Dict[str, Any]
 
 # Store for workflow runs (in production, use a database)
 workflow_runs = {}
@@ -286,6 +320,124 @@ async def validate_url(url: str):
     except Exception as e:
         logger.error(f"URL validation failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"URL validation failed: {str(e)}")
+
+@app.post("/test/generate-bdd-scenarios", response_model=BDDTestResponse)
+async def test_generate_bdd_scenarios(request: BDDTestRequest):
+    """Test API endpoint for generate_bdd_scenarios function"""
+    logger.info(f"Test endpoint: Generating BDD scenarios for ticket {request.ticket_details.key}")
+    
+    try:
+        from src.tools.rag_tools import RAGTools
+        from src.agents.bdd_generator_agent import BDDGeneratorAgent
+        
+        # Initialize RAG tools and BDD generator agent
+        rag_tools = RAGTools()
+        bdd_agent = BDDGeneratorAgent(rag_tools)
+        
+        # Convert request to format expected by generate_bdd_scenarios
+        ticket_dict = {
+            'key': request.ticket_details.key,
+            'summary': request.ticket_details.summary,
+            'description': request.ticket_details.description,
+            'acceptance_criteria': request.ticket_details.acceptance_criteria
+        }
+        
+        existing_code_list = [
+            {
+                'metadata': item.metadata,
+                'content': item.content
+            }
+            for item in request.existing_code
+        ]
+        
+        # Call generate_bdd_scenarios
+        logger.info("Calling generate_bdd_scenarios...")
+        result = bdd_agent.generate_bdd_scenarios(
+            ticket=ticket_dict,
+            existing_code=existing_code_list,
+            application_data=request.application_data
+        )
+        
+        logger.info(f"BDD generation completed for ticket {result.get('ticket_key')}")
+        
+        # Return the result
+        return BDDTestResponse(
+            update_feature_file=result.get('update_feature_file', False),
+            feature_file_name=result.get('feature_file_name'),
+            feature=result.get('feature', ''),
+            update_steps_file=result.get('update_steps_file', False),
+            steps_file_name=result.get('steps_file_name'),
+            step_definitions=result.get('step_definitions', ''),
+            ticket_key=result.get('ticket_key', '')
+        )
+        
+    except Exception as e:
+        logger.error(f"BDD generation test failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"BDD generation test failed: {str(e)}")
+
+@app.post("/workflow/executor-critic", response_model=ExecutorCriticWorkflowResponse)
+async def trigger_executor_critic_workflow_api(request: ExecutorCriticWorkflowRequest):
+    """Trigger the executor-critic workflow with ticket details and existing code"""
+    logger.info(f"Triggering executor-critic workflow for ticket {request.ticket_details.key}")
+    
+    try:
+        # Initialize executor-critic orchestrator
+        executor_critic_orchestrator = ExecutorCriticOrchestrator()
+        
+        # Index existing_code into RAG if provided (since generate_tests uses RAG search)
+        if request.existing_code:
+            logger.info(f"Indexing {len(request.existing_code)} existing code items into RAG")
+            
+            # Convert existing_code to format expected by index_codebase
+            features = []
+            step_defs = []
+            
+            for item in request.existing_code:
+                code_item = {
+                    'path': item.metadata.get('path', ''),
+                    'content': item.content,
+                    'name': item.metadata.get('name', item.metadata.get('path', ''))
+                }
+                
+                # Determine if it's a feature file or step definition based on metadata or path
+                if 'feature' in item.metadata.get('type', '').lower() or '.feature' in code_item['path'].lower():
+                    features.append(code_item)
+                else:
+                    step_defs.append(code_item)
+            
+            # Index the codebase using orchestrator's RAG tools and BDD agent
+            #if features or step_defs:
+            #    executor_critic_orchestrator.rag_tools.index_codebase(features, step_defs, executor_critic_orchestrator.bdd_agent)
+            #    logger.info(f"Indexed {len(features)} feature files and {len(step_defs)} step definitions")
+        
+        # Build state for the workflow
+        state = {
+            'current_ticket': {
+                'key': request.ticket_details.key,
+                'summary': request.ticket_details.summary,
+                'description': request.ticket_details.description,
+                'acceptance_criteria': request.ticket_details.acceptance_criteria
+            },
+            'application_data': request.application_data or '',
+            'critic_feedback': '',
+            'needs_revision': False,
+            'revision_count': 0
+        }
+        
+        # Trigger the executor-critic workflow
+        logger.info(f"Calling trigger_executor_critic_workflow for ticket {request.ticket_details.key}")
+        result = await executor_critic_orchestrator.trigger_executor_critic_workflow(state)
+        
+        logger.info(f"Executor-critic workflow completed for ticket {request.ticket_details.key}")
+        
+        return ExecutorCriticWorkflowResponse(
+            status="completed",
+            result=result
+        )
+        
+    except Exception as e:
+        logger.error(f"Executor-critic workflow failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Executor-critic workflow failed: {str(e)}")
 
 if __name__ == "__main__":
     logger.info("Starting FastAPI server")

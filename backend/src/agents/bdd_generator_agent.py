@@ -1,9 +1,6 @@
 from langchain_openai import ChatOpenAI
 import openai
-from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
 import backoff
-import time
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import ChatPromptTemplate
 from typing import Dict, List
 
@@ -32,8 +29,7 @@ class BDDGeneratorAgent:
 
     @backoff.on_exception(
         custom_backoff,
-        (openai.RateLimitError, openai.APITimeoutError, openai.InternalServerError,
-         ResourceExhausted, ServiceUnavailable),
+        (openai.RateLimitError, openai.APITimeoutError, openai.InternalServerError),
         max_tries=6,
         max_time=300,  # Maximum 5 minutes
         jitter=backoff.full_jitter,
@@ -51,18 +47,6 @@ class BDDGeneratorAgent:
             response = self.llm.invoke(messages)
             logger.debug("LLM invocation successful")
             return response
-        except ResourceExhausted as e:
-            logger.warning(f"Google ResourceExhausted error: {e}")
-            # Optionally, if the exception has a 'retry_after' attribute, wait that long
-            retry_delay = getattr(e, "retry_delay", None)
-            if retry_delay:
-                logger.warning(f"Sleeping for retry_delay seconds: {retry_delay}")
-                time.sleep(retry_delay)
-            # re-raise so backoff decorator handles retry
-            raise
-        except ServiceUnavailable as e:
-            logger.warning(f"Google ServiceUnavailable error: {e}")
-            raise
         except openai.RateLimitError as e:
             logger.warning(f"Rate limit error: {e}")
             raise  # Let backoff handle the retry
@@ -134,7 +118,7 @@ class BDDGeneratorAgent:
 
         return content
     
-    def generate_bdd_scenarios(self, ticket: Dict, existing_code: List[Dict], application_data: Dict = None) -> Dict:
+    def generate_bdd_scenarios(self, ticket: Dict, existing_code: List[Dict], application_data: Dict = None, critic_feedback: str = None) -> Dict:
         """Generate BDD scenarios and step definitions"""
         
         # Format existing code context
@@ -293,13 +277,27 @@ class BDDGeneratorAgent:
         {code_context}
         
         Application Data Collected:                                          
-        {app_context}                                          
+        {app_context}
+        
+        {critic_feedback_section}
         """)
 
+        # Add critic feedback section if provided
+        critic_feedback_section = ""
+        if critic_feedback:
+            critic_feedback_section = f"""
+        Previous Critic Feedback (Please address these issues in your generation):
+        {critic_feedback}
+        
+        IMPORTANT: This is a revision request. Please carefully address all the feedback points above
+        and improve the generated tests accordingly.
+        """
+        
         message = prompt.format_messages(
             **ticket,
             code_context=code_context,
-            app_context=application_data if application_data else "No application data provided."
+            app_context=application_data if application_data else "No application data provided.",
+            critic_feedback_section=critic_feedback_section
         )
 
         logger.debug(f"Formatted prompt for BDD generation: {message}")
@@ -359,4 +357,83 @@ class BDDGeneratorAgent:
             'steps_file_name': steps_file_name,
             'step_definitions': step_def_content,
             'ticket_key': ticket['key']
+        }
+    
+    def critique_tests(self, ticket: Dict, generated_tests: Dict, application_data: str = None) -> Dict:
+        """Critique the generated BDD tests and provide feedback"""
+        
+        prompt = ChatPromptTemplate.from_template("""
+        You are a quality assurance expert reviewing auto-generated BDD tests.
+        Your task is to evaluate the generated tests against the original Jira ticket requirements.
+        
+        Review Criteria:
+        1. Do the tests cover all acceptance criteria from the ticket?
+        2. Are the scenarios clear, complete, and testable?
+        3. Do the step definitions follow best practices and are they implementable?
+        4. Are there any missing edge cases or scenarios?
+        5. Do the tests align with the application data (if provided)?
+        6. Are the file paths and structure appropriate?
+        
+        Jira Ticket Context:
+        Key: {key}
+        Summary: {summary}
+        Description: {description}
+        Acceptance Criteria: {acceptance_criteria}
+        
+        Generated Tests:
+        Feature File: {feature_file_name}
+        Feature Content:
+        {feature_content}
+        
+        Step Definitions File: {steps_file_name}
+        Step Definitions Content:
+        {step_definitions_content}
+        
+        Application Data:
+        {app_context}
+        
+        Provide your critique in the following format:
+        
+        <<FEEDBACK_START>>
+        [Your detailed feedback here]
+        <<FEEDBACK_END>>
+        
+        <<NEEDS_REVISION_START>>
+        [TRUE if tests need revision, FALSE if they are acceptable]
+        <<NEEDS_REVISION_END>>
+        
+        <<REVISION_SUGGESTIONS_START>>
+        [Specific suggestions for improvement if revision is needed]
+        <<REVISION_SUGGESTIONS_END>>
+        """)
+        
+        message = prompt.format_messages(
+            **ticket,
+            feature_file_name=generated_tests.get('feature_file_name', 'N/A'),
+            feature_content=generated_tests.get('feature', ''),
+            steps_file_name=generated_tests.get('steps_file_name', 'N/A'),
+            step_definitions_content=generated_tests.get('step_definitions', ''),
+            app_context=application_data if application_data else "No application data provided."
+        )
+        
+        response = self._invoke_llm_with_backoff(message)
+        content = response.content
+        
+        # Parse the response
+        feedback_match = re.search(r"<<FEEDBACK_START>>(.*?)<<FEEDBACK_END>>", content, re.S)
+        needs_revision_match = re.search(r"<<NEEDS_REVISION_START>>(.*?)<<NEEDS_REVISION_END>>", content, re.S)
+        suggestions_match = re.search(r"<<REVISION_SUGGESTIONS_START>>(.*?)<<REVISION_SUGGESTIONS_END>>", content, re.S)
+        
+        feedback = feedback_match.group(1).strip() if feedback_match else "No feedback provided."
+        needs_revision_str = needs_revision_match.group(1).strip().upper() if needs_revision_match else "FALSE"
+        needs_revision = "TRUE" in needs_revision_str
+        suggestions = suggestions_match.group(1).strip() if suggestions_match else ""
+        
+        logger.info(f'Critic feedback: Needs revision = {needs_revision}')
+        logger.debug(f'Critic feedback content: {feedback[:100]}...')
+        
+        return {
+            'feedback': feedback,
+            'needs_revision': needs_revision,
+            'suggestions': suggestions
         }
