@@ -182,18 +182,28 @@ class WorkflowOrchestrator:
         return {**state, 'application_data': application_data}
     
     def generate_tests(self, state: Dict) -> Dict:
-        """Generate BDD tests for the current ticket"""
+        """Generate BDD tests for the current ticket (executor node)"""
         ticket = state['current_ticket']
         application_data = state.get('application_data', '')
+        critic_feedback = state.get('critic_feedback', '')
+        needs_revision = state.get('needs_revision', False)
         
-        logger.info(f'Generating BDD tests for ticket: {ticket["key"]}')
-
+        if needs_revision and critic_feedback:
+            logger.info(f'Regenerating BDD tests for ticket: {ticket["key"]} based on critic feedback')
+        else:
+            logger.info(f'Generating BDD tests for ticket: {ticket["key"]}')
+        
         # Search for similar code
         query = f"{ticket['summary']} {ticket['description'][:200]}"
         similar_code = self.rag_tools.search_similar_code(query)
         
-        # Generate BDD scenarios and step definitions with application data
-        generated = self.bdd_agent.generate_bdd_scenarios(ticket, similar_code, application_data)
+        # Generate BDD scenarios and step definitions with application data and critic feedback
+        generated = self.bdd_agent.generate_bdd_scenarios(
+            ticket, 
+            similar_code, 
+            application_data,
+            critic_feedback if needs_revision else None
+        )
         
         return {**state, 'generated_tests': generated}
     
@@ -308,3 +318,4 @@ class WorkflowOrchestrator:
         result = await self.workflow.ainvoke(initial_state, config={"recurssionLimit": 10})
         logger.debug(f"Sprint workflow result: {result}")
         return result
+    

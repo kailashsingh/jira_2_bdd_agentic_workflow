@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     huggingface_api_key: str
     anthropic_api_key: str
-    google_api_key: str
+    #google_api_key: str
     model_name: str = "gpt-4-turbo"
     
     # RAG settings
